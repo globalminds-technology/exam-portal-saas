@@ -29,12 +29,21 @@ import {
   CheckSquare,
   Layers,
   ShieldAlert,
+  Mail,
+  Radio,
+  Power,
+  Phone,
+  PlayCircle,
+  ChevronDown,
+  Filter,
 } from 'lucide-react';
+import CustomDropdown, { DropdownOption } from '@/components/custom-dropdown';
 
 interface UserItem {
   id: string;
   name: string;
   email: string;
+  contactNumber?: string | null;
   role: 'SUPER_ADMIN' | 'ADMIN' | 'USER';
   isActive: boolean;
   createdAt: string;
@@ -367,25 +376,124 @@ export default function AdminUsersPage() {
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
   const [studentName, setStudentName] = useState('');
   const [studentEmail, setStudentEmail] = useState('');
-  const [studentPassword, setStudentPassword] = useState('');
+  const [studentContactNumber, setStudentContactNumber] = useState('');
   const [studentBatchId, setStudentBatchId] = useState('');
-  const [showStudentPassword, setShowStudentPassword] = useState(false);
   const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
   const [addStudentError, setAddStudentError] = useState('');
   const [createdStudentResult, setCreatedStudentResult] = useState<{
-    user: { id: string; name: string; email: string; batch?: { batchName: string } | null };
+    user: { id: string; name: string; email: string; contactNumber?: string | null; batch?: { batchName: string } | null };
     plainPassword: string;
+    emailResult?: { success: boolean; error?: string; isMock?: boolean };
   } | null>(null);
   const [copiedStudentCreds, setCopiedStudentCreds] = useState(false);
 
+  // Super Admin Examination Session Control State
+  const [examControl, setExamControl] = useState<{
+    isExamStarted: boolean;
+    startedAt: string | null;
+    startedBy?: { name: string; email: string } | null;
+  }>({
+    isExamStarted: false,
+    startedAt: null,
+  });
+  const [isTogglingExam, setIsTogglingExam] = useState(false);
+  const [examMsg, setExamMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
+  const fetchExamControl = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/exam-control');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.data) setExamControl(data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching exam control:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchExamControl();
+  }, [fetchExamControl]);
+
+  const handleToggleExam = async (shouldStart: boolean) => {
+    const actionWord = shouldStart ? 'START' : 'STOP';
+    const confirmMessage = shouldStart
+      ? 'Are you sure you want to START the examination?\n\nOnce started, registered candidates will immediately be able to attend and complete their assessment.'
+      : 'Are you sure you want to STOP the examination?\n\nThis will prevent any new candidate entries.';
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setIsTogglingExam(true);
+    setExamMsg(null);
+
+    try {
+      const res = await fetch('/api/admin/exam-control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isExamStarted: shouldStart }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Failed to ${actionWord.toLowerCase()} examination.`);
+      }
+
+      setExamControl(data.data);
+      setExamMsg({
+        text: data.message || `Examination successfully ${shouldStart ? 'started' : 'stopped'}.`,
+        type: 'success',
+      });
+      setTimeout(() => setExamMsg(null), 6000);
+    } catch (err: any) {
+      setExamMsg({
+        text: err.message || 'An error occurred while updating examination state.',
+        type: 'error',
+      });
+    } finally {
+      setIsTogglingExam(false);
+    }
+  };
+
+  // Resend Email State & Handlers
+  const [resendingUserId, setResendingUserId] = useState<string | null>(null);
+  const [resendResultMsg, setResendResultMsg] = useState<{ userId: string; text: string; success: boolean } | null>(null);
+
+  const handleResendEmail = async (userItem: UserItem) => {
+    setResendingUserId(userItem.id);
+    setResendResultMsg(null);
+    try {
+      const res = await fetch(`/api/admin/users/${userItem.id}/resend-email`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to resend credentials email.');
+      }
+      setResendResultMsg({
+        userId: userItem.id,
+        text: `Credentials email dispatched to ${userItem.email}! (New password: ${data.plainPassword})`,
+        success: true,
+      });
+      setTimeout(() => setResendResultMsg(null), 5000);
+    } catch (err: any) {
+      setResendResultMsg({
+        userId: userItem.id,
+        text: err.message || 'Error resending email.',
+        success: false,
+      });
+      setTimeout(() => setResendResultMsg(null), 5000);
+    } finally {
+      setResendingUserId(null);
+    }
+  };
 
   const resetAddStudentModal = () => {
     setStudentName('');
     setStudentEmail('');
-    setStudentPassword('');
+    setStudentContactNumber('');
     setStudentBatchId('');
-    setShowStudentPassword(false);
     setAddStudentError('');
     setCreatedStudentResult(null);
     setCopiedStudentCreds(false);
@@ -395,6 +503,7 @@ export default function AdminUsersPage() {
     e.preventDefault();
     const trimmedName = studentName.trim();
     const trimmedEmail = studentEmail.trim();
+    const trimmedContact = studentContactNumber.trim();
 
     if (!trimmedName) {
       setAddStudentError('Please enter candidate name.');
@@ -404,8 +513,8 @@ export default function AdminUsersPage() {
       setAddStudentError('Please enter a valid candidate email address.');
       return;
     }
-    if (studentPassword && studentPassword.trim().length < 6) {
-      setAddStudentError('Password must be at least 6 characters.');
+    if (!trimmedContact) {
+      setAddStudentError('Please enter candidate contact number.');
       return;
     }
 
@@ -419,7 +528,7 @@ export default function AdminUsersPage() {
         body: JSON.stringify({
           name: trimmedName,
           email: trimmedEmail.toLowerCase(),
-          password: studentPassword.trim() || undefined,
+          contactNumber: trimmedContact,
           batchId: studentBatchId || null,
         }),
       });
@@ -432,6 +541,7 @@ export default function AdminUsersPage() {
       setCreatedStudentResult({
         user: data.user,
         plainPassword: data.plainPassword,
+        emailResult: data.emailResult,
       });
 
       // Refresh candidate list and batch counters
@@ -449,9 +559,11 @@ export default function AdminUsersPage() {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const text = `Candidate Login Credentials:
 Name: ${createdStudentResult.user.name}
-Email: ${createdStudentResult.user.email}
+Email (Login ID): ${createdStudentResult.user.email}
 Password: ${createdStudentResult.plainPassword}
-Portal URL: ${origin}/login`;
+${createdStudentResult.user.contactNumber ? `Contact Number: ${createdStudentResult.user.contactNumber}\n` : ''}Examination Portal URL: ${origin}/login
+
+Note: The examination can be taken once the Super Administrator clicks "Start Examination".`;
 
     navigator.clipboard.writeText(text);
     setCopiedStudentCreds(true);
@@ -640,14 +752,41 @@ Portal URL: ${origin}/login`;
     setImportResult(null);
   };
 
+  const batchOptions: DropdownOption[] = [
+    { value: '', label: 'All Batches', count: totalUsers },
+    ...availableBatches
+      .filter((b) => b.totalCandidates > 0)
+      .map((b) => ({
+        value: b.id,
+        label: b.batchName,
+        count: b.totalCandidates,
+      })),
+  ];
+
+  const roleOptions: DropdownOption[] = [
+    { value: 'ALL', label: 'All Roles' },
+    { value: 'USER', label: 'Candidates Only' },
+    { value: 'ADMIN', label: 'Admins Only' },
+    { value: 'SUPER_ADMIN', label: 'Super Admins' },
+  ];
+
+  const adminOptions: DropdownOption[] = [
+    { value: '', label: 'All Admins' },
+    ...availableAdmins.map((adm) => ({
+      value: adm.id,
+      label: adm.name,
+    })),
+  ];
+
   return (
     <div className="w-full px-4 sm:px-8 lg:px-10 py-8 space-y-6">
       {/* Header with Title and Import Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Header with Title and Action Buttons */}
+      <div className="flex flex-col 2xl:flex-row 2xl:items-center 2xl:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center">
-            <Users className="w-8 h-8 mr-3 text-blue-600" />
-            User Management
+            <Users className="w-8 h-8 mr-3 text-blue-600 shrink-0" />
+            <span>User Management</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
             {currentUser?.role === 'SUPER_ADMIN'
@@ -656,15 +795,15 @@ Portal URL: ${origin}/login`;
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
           {!isDeleteMode ? (
             <button
               type="button"
               onClick={() => setIsDeleteMode(true)}
-              className="inline-flex items-center px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold shadow-sm transition-all text-sm space-x-2"
+              className="inline-flex items-center justify-center h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold shadow-xs transition-all text-xs sm:text-sm space-x-2 whitespace-nowrap cursor-pointer active:scale-95"
             >
-              <Trash2 className="w-4 h-4 text-rose-600" />
-              <span>Delete</span>
+              <Trash2 className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="whitespace-nowrap">Delete</span>
             </button>
           ) : (
             <>
@@ -677,10 +816,10 @@ Portal URL: ${origin}/login`;
                   }
                 }}
                 disabled={selectedUserIds.length === 0 && !selectAllAcrossPages}
-                className="inline-flex items-center px-4 py-2.5 rounded-xl font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-rose-600/20 transition-all text-sm space-x-2 animate-in fade-in"
+                className="inline-flex items-center justify-center h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all text-xs sm:text-sm space-x-2 whitespace-nowrap cursor-pointer active:scale-95 animate-in fade-in"
               >
-                <Trash2 className="w-4 h-4" />
-                <span>
+                <Trash2 className="w-4 h-4 shrink-0" />
+                <span className="whitespace-nowrap">
                   {selectAllAcrossPages
                     ? `Delete All Candidates in ${batchScopeLabel}`
                     : selectedUserIds.length > 0
@@ -696,49 +835,171 @@ Portal URL: ${origin}/login`;
                   setSelectedUserIds([]);
                   setSelectAllAcrossPages(false);
                 }}
-                className="inline-flex items-center px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50 shadow-sm transition-all text-sm space-x-1.5"
+                className="inline-flex items-center justify-center h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50 shadow-xs transition-all text-xs sm:text-sm space-x-1.5 whitespace-nowrap cursor-pointer active:scale-95"
               >
-                <span>Cancel</span>
+                <span className="whitespace-nowrap">Cancel</span>
               </button>
             </>
           )}
 
           {currentUser?.role === 'SUPER_ADMIN' && (
             <button
+              type="button"
               onClick={() => {
                 resetAddAdminModal();
                 setIsAddAdminOpen(true);
               }}
-              className="inline-flex items-center px-4 py-2.5 rounded-xl font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-md shadow-purple-600/20 transition-all text-sm space-x-2"
+              className="inline-flex items-center justify-center h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold shadow-xs transition-all text-xs sm:text-sm space-x-2 whitespace-nowrap cursor-pointer active:scale-95"
             >
-              <Shield className="w-4 h-4" />
-              <span>Add Administrator</span>
+              <Shield className="w-4 h-4 text-purple-600 shrink-0" />
+              <span className="whitespace-nowrap">Add Administrator</span>
             </button>
           )}
 
           <button
+            type="button"
             onClick={() => {
               resetAddStudentModal();
               setIsAddStudentOpen(true);
             }}
-            className="inline-flex items-center px-4 py-2.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20 transition-all text-sm space-x-2"
+            className="inline-flex items-center justify-center h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold shadow-xs transition-all text-xs sm:text-sm space-x-2 whitespace-nowrap cursor-pointer active:scale-95"
           >
-            <UserPlus className="w-4 h-4" />
-            <span>Add Student</span>
+            <UserPlus className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="whitespace-nowrap">Add Student</span>
           </button>
 
           <button
+            type="button"
             onClick={() => {
               resetModal();
               setIsImportModalOpen(true);
             }}
-            className="inline-flex items-center px-4 py-2.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all text-sm space-x-2"
+            className="inline-flex items-center justify-center h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold shadow-xs transition-all text-xs sm:text-sm space-x-2 whitespace-nowrap cursor-pointer active:scale-95"
           >
-            <Upload className="w-4 h-4" />
-            <span>Import Candidates (Excel/CSV)</span>
+            <Upload className="w-4 h-4 text-blue-600 shrink-0" />
+            <span className="whitespace-nowrap">Import Candidates</span>
           </button>
         </div>
       </div>
+
+      {/* Super Admin Global Examination Control Card */}
+      <div
+        className={`rounded-2xl p-4 sm:px-6 sm:py-4 border transition-all shadow-sm ${
+          examControl.isExamStarted
+            ? 'bg-gradient-to-r from-emerald-50/70 via-white to-teal-50/40 border-emerald-300'
+            : 'bg-gradient-to-r from-slate-50/80 via-white to-amber-50/30 border-slate-200'
+        }`}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="space-y-1.5 max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center border shrink-0 ${
+                  examControl.isExamStarted
+                    ? 'bg-emerald-100 border-emerald-200 text-emerald-700'
+                    : 'bg-amber-100 border-amber-200 text-amber-700'
+                }`}
+              >
+                <Radio className={`w-3.5 h-3.5 ${examControl.isExamStarted ? 'animate-pulse text-emerald-600' : 'text-amber-600'}`} />
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Global Session Controller
+              </span>
+              <span
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border gap-1.5 ${
+                  examControl.isExamStarted
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    examControl.isExamStarted ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'
+                  }`}
+                />
+                <span>{examControl.isExamStarted ? 'EXAMINATION LIVE' : 'SESSION LOCKED'}</span>
+              </span>
+            </div>
+
+            <h3 className="text-base sm:text-lg font-bold tracking-tight text-slate-900">
+              {examControl.isExamStarted
+                ? 'Examination Is Active — Candidates Can Attend'
+                : 'Examination Is Not Started — Candidate Entry Is Locked'}
+            </h3>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              {examControl.isExamStarted
+                ? `Candidates are currently permitted to take their assessment. Started on ${
+                    examControl.startedAt ? new Date(examControl.startedAt).toLocaleString() : 'recently'
+                  }${examControl.startedBy ? ` by ${examControl.startedBy.name}` : ''}.`
+                : 'Candidate accounts are locked from taking tests until the Super Administrator initiates the examination session.'}
+            </p>
+
+            {examMsg && (
+              <div
+                className={`p-2.5 rounded-lg text-xs font-semibold flex items-center space-x-2 ${
+                  examMsg.type === 'success'
+                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border border-rose-200 text-rose-800'
+                }`}
+              >
+                <span>{examMsg.text}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+            {currentUser?.role === 'SUPER_ADMIN' ? (
+              !examControl.isExamStarted ? (
+                <button
+                  onClick={() => handleToggleExam(true)}
+                  disabled={isTogglingExam}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-all flex items-center justify-center space-x-2 cursor-pointer active:scale-95 disabled:opacity-75 border border-teal-600/20"
+                >
+                  <PlayCircle className="w-4 h-4 text-white" />
+                  <span>{isTogglingExam ? 'Starting Exam...' : 'Start Examination'}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleToggleExam(false)}
+                  disabled={isTogglingExam}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-bold text-xs sm:text-sm shadow-sm transition-all flex items-center justify-center space-x-2 cursor-pointer active:scale-95 disabled:opacity-75 border border-rose-600/20"
+                >
+                  <Power className="w-4 h-4 text-white" />
+                  <span>{isTogglingExam ? 'Stopping...' : 'Stop Examination'}</span>
+                </button>
+              )
+            ) : (
+              <div className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
+                <span>Super Administrator exclusive exam trigger</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {resendResultMsg && (
+        <div
+          className={`p-4 rounded-2xl text-sm font-semibold flex items-center justify-between animate-in fade-in ${
+            resendResultMsg.success
+              ? 'bg-blue-50 border border-blue-200 text-blue-900'
+              : 'bg-rose-50 border border-rose-200 text-rose-900'
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            <Mail className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            <span>{resendResultMsg.text}</span>
+          </div>
+          <button
+            onClick={() => setResendResultMsg(null)}
+            className="text-slate-400 hover:text-slate-600 font-bold"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
 
       {/* Success Notifications */}
       {bulkDeleteSuccess && (
@@ -772,104 +1033,129 @@ Portal URL: ${origin}/login`;
       )}
 
       {/* Search & Batch Filters Toolbar */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <Layers className="w-4 h-4 text-blue-500 shrink-0" />
-            <span className="text-sm font-bold text-slate-700 shrink-0">Batch:</span>
-          </div>
-
-          <select
-            value={selectedBatchId}
-            onChange={(e) => {
-              setSelectedBatchId(e.target.value);
-              setSelectedUserIds([]);
-              setSelectAllAcrossPages(false);
-              setPage(1);
-            }}
-            className="flex-1 lg:max-w-xs px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-800"
-          >
-            <option value="">— All Batches —</option>
-            {availableBatches
-              .filter((b) => b.totalCandidates > 0)
-              .map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.batchName} ({b.totalCandidates} candidates{b.createdAt ? ` · ${new Date(b.createdAt).toLocaleDateString()}` : ''})
-                </option>
-              ))}
-          </select>
-
-          {currentUser?.role === 'SUPER_ADMIN' && (
-            <>
-              <div className="flex items-center gap-2 min-w-0 sm:ml-2">
-                <Shield className="w-4 h-4 text-purple-500 shrink-0" />
-                <span className="text-sm font-bold text-slate-700 shrink-0">Role:</span>
-              </div>
-
-              <select
-                value={selectedRole}
-                onChange={(e) => {
-                  setSelectedRole(e.target.value as any);
-                  setSelectedUserIds([]);
-                  setSelectAllAcrossPages(false);
-                  setPage(1);
-                }}
-                className="px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-800"
-              >
-                <option value="ALL">All Roles</option>
-                <option value="USER">Candidates Only</option>
-                <option value="ADMIN">Administrators Only</option>
-                <option value="SUPER_ADMIN">Super Admins Only</option>
-              </select>
-
-              <div className="flex items-center gap-2 min-w-0 sm:ml-2">
-                <Users className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span className="text-sm font-bold text-slate-700 shrink-0">Admin:</span>
-              </div>
-
-              <select
-                value={selectedAdminId}
-                onChange={(e) => {
-                  setSelectedAdminId(e.target.value);
-                  setSelectedUserIds([]);
-                  setSelectAllAcrossPages(false);
-                  setPage(1);
-                }}
-                className="px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-800"
-              >
-                <option value="">All Admins (All Students)</option>
-                {availableAdmins.map((adm) => (
-                  <option key={adm.id} value={adm.id}>
-                    Admin: {adm.name} ({adm.email})
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
-
-          <div className="relative flex-1 lg:max-w-xs lg:ml-auto">
-            <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-sm space-y-3.5 relative z-20 overflow-visible">
+        <div className="flex items-center gap-2.5 w-full relative z-20">
+          {/* Search Box */}
+          <div className="relative flex-1 min-w-[160px] max-w-xs md:max-w-sm shrink-0">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="text"
               placeholder="Search user name or email..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-white focus:bg-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800 transition-all placeholder:text-slate-400"
             />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-lg hover:bg-slate-100 transition-colors"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Pills Container - All on the Same Line with Custom Dropdowns */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Batch Filter Pill */}
+            <CustomDropdown
+              label="Batch"
+              icon={<Layers className="w-3.5 h-3.5 text-blue-600" />}
+              value={selectedBatchId}
+              options={batchOptions}
+              onChange={(val) => {
+                setSelectedBatchId(val);
+                setSelectedUserIds([]);
+                setSelectAllAcrossPages(false);
+                setPage(1);
+              }}
+              colorScheme="blue"
+              menuWidth="min-w-[220px] max-w-[280px]"
+            />
+
+            {/* Role Filter Pill (Super Admin Only) */}
+            {currentUser?.role === 'SUPER_ADMIN' && (
+              <CustomDropdown
+                label="Role"
+                icon={<Shield className="w-3.5 h-3.5 text-purple-600" />}
+                value={selectedRole}
+                options={roleOptions}
+                onChange={(val) => {
+                  setSelectedRole(val as any);
+                  setSelectedUserIds([]);
+                  setSelectAllAcrossPages(false);
+                  setPage(1);
+                }}
+                colorScheme="purple"
+                menuWidth="min-w-[190px]"
+              />
+            )}
+
+            {/* Admin Filter Pill (Super Admin Only) */}
+            {currentUser?.role === 'SUPER_ADMIN' && (
+              <CustomDropdown
+                label="Admin"
+                icon={<Users className="w-3.5 h-3.5 text-emerald-600" />}
+                value={selectedAdminId}
+                options={adminOptions}
+                onChange={(val) => {
+                  setSelectedAdminId(val);
+                  setSelectedUserIds([]);
+                  setSelectAllAcrossPages(false);
+                  setPage(1);
+                }}
+                colorScheme="emerald"
+                menuWidth="min-w-[210px] max-w-[280px]"
+              />
+            )}
+
+            {/* Reset Filters button */}
+            {(selectedBatchId || selectedRole !== 'ALL' || selectedAdminId || searchInput) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBatchId('');
+                  setSelectedRole('ALL');
+                  setSelectedAdminId('');
+                  setSearchInput('');
+                  setSearch('');
+                  setPage(1);
+                }}
+                className="inline-flex items-center text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/80 px-2.5 py-2 rounded-xl border border-rose-200/80 transition-all gap-1 shadow-xs shrink-0"
+                title="Reset all filters"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* Batch & Candidate Summary Bar with Quick Select All */}
-        <div className="flex flex-wrap items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500 gap-2">
-          <div className="flex items-center space-x-1.5">
-            <span>
-              Showing <strong className="text-slate-800">{totalUsers}</strong> user(s)
-              {selectedBatchObj ? (
-                <> in batch <strong className="text-blue-700">&ldquo;{selectedBatchObj.batchName}&rdquo;</strong></>
-              ) : (
-                <> across <strong className="text-slate-700">All Batches</strong></>
-              )}
+        <div className="flex flex-wrap items-center justify-between pt-3.5 border-t border-slate-100 text-xs text-slate-500 gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+              Showing <strong className="text-slate-900 font-bold">{totalUsers}</strong> user(s)
             </span>
+            {selectedBatchObj ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 font-semibold border border-blue-100">
+                <Layers className="w-3 h-3" />
+                Batch: &ldquo;{selectedBatchObj.batchName}&rdquo;
+              </span>
+            ) : (
+              <span className="text-slate-400 text-xs">
+                across All Batches
+              </span>
+            )}
+            {selectedRole !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 font-semibold border border-purple-100">
+                <Shield className="w-3 h-3" />
+                Role: {selectedRole}
+              </span>
+            )}
           </div>
 
           {isDeleteMode && (
@@ -992,6 +1278,7 @@ Portal URL: ${origin}/login`;
                     </th>
                   )}
                   <th className={`py-3.5 ${!isDeleteMode ? 'pl-6 pr-4' : 'px-4'} whitespace-nowrap text-left`}>Candidate</th>
+                  <th className="py-3.5 px-4 whitespace-nowrap text-left">Contact Number</th>
                   {currentUser?.role === 'SUPER_ADMIN' && (
                     <th className="py-3.5 px-4 whitespace-nowrap text-left">Role</th>
                   )}
@@ -1052,6 +1339,17 @@ Portal URL: ${origin}/login`;
                           <span className="inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200">
                             📋 {u.batch.batchName}
                           </span>
+                        )}
+                      </td>
+
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        {u.contactNumber ? (
+                          <div className="flex items-center text-xs font-mono font-semibold text-slate-700 space-x-1.5">
+                            <Phone className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{u.contactNumber}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400 italic">Not Provided</span>
                         )}
                       </td>
 
@@ -1188,6 +1486,22 @@ Portal URL: ${origin}/login`;
                           </div>
                         ) : canManageUser ? (
                           <div className="flex items-center justify-center space-x-2">
+                            {u.role === 'USER' && (
+                              <button
+                                onClick={() => handleResendEmail(u)}
+                                disabled={resendingUserId === u.id}
+                                className="inline-flex items-center space-x-1 text-xs font-bold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors border border-blue-200/70 shadow-sm"
+                                title="Resend credentials and exam portal link to candidate email"
+                              >
+                                {resendingUserId === u.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Mail className="w-3.5 h-3.5 text-blue-600" />
+                                )}
+                                <span>Resend</span>
+                              </button>
+                            )}
+
                             <button
                               onClick={() => handleToggleStatus(u.id, u.role)}
                               className={`inline-flex items-center space-x-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors border shadow-sm ${
@@ -2025,15 +2339,37 @@ Portal URL: ${origin}/login`;
             {/* Modal Content */}
             <div className="p-6">
               {createdStudentResult ? (
-                /* Success View: Display Created Credentials */
+                /* Success View: Display Created Credentials & Email Status */
                 <div className="space-y-5">
                   <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center space-x-3">
                     <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
                     <div>
                       <h4 className="text-sm font-bold">Candidate Added to Examination Portal</h4>
                       <p className="text-xs text-emerald-700 mt-0.5">
-                        The candidate can now sign in using the credentials below and take their single allowed assessment attempt.
+                        Login credentials have been auto-generated by the system and sent to the candidate&apos;s email address.
                       </p>
+                    </div>
+                  </div>
+
+                  {/* Email Dispatch Status */}
+                  <div
+                    className={`p-3.5 rounded-2xl border text-xs flex items-start space-x-3 ${
+                      createdStudentResult.emailResult?.success
+                        ? 'bg-blue-50 border-blue-200 text-blue-900'
+                        : 'bg-amber-50 border-amber-200 text-amber-900'
+                    }`}
+                  >
+                    <Mail className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">
+                        {createdStudentResult.emailResult?.success
+                          ? 'Credentials Email Dispatched'
+                          : 'Email Notice'}
+                        :
+                      </span>{' '}
+                      {createdStudentResult.emailResult?.success
+                        ? `The login email, generated password, and examination portal link were dispatched to ${createdStudentResult.user.email}.`
+                        : `${createdStudentResult.emailResult?.error || 'Email queued or logged to console.'}`}
                     </div>
                   </div>
 
@@ -2048,12 +2384,12 @@ Portal URL: ${origin}/login`;
                       <span className="text-sm font-mono font-bold text-slate-900">{createdStudentResult.user.email}</span>
                     </div>
 
-                    <div className="flex justify-between items-center pb-3 border-b border-slate-200">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Password</span>
-                      <span className="text-sm font-mono font-bold bg-white px-3 py-1 rounded-lg border border-slate-200 text-emerald-700">
-                        {createdStudentResult.plainPassword}
-                      </span>
-                    </div>
+                    {createdStudentResult.user.contactNumber && (
+                      <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Contact Number</span>
+                        <span className="text-sm font-mono font-bold text-slate-900">{createdStudentResult.user.contactNumber}</span>
+                      </div>
+                    )}
 
                     <div className="flex justify-between items-center pb-3 border-b border-slate-200">
                       <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Assigned Batch</span>
@@ -2063,27 +2399,35 @@ Portal URL: ${origin}/login`;
                     </div>
 
                     <div className="flex justify-between items-center">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Portal URL</span>
-                      <span className="text-xs font-mono text-blue-600">
-                        {typeof window !== 'undefined' ? `${window.location.origin}/login` : '/login'}
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Delivery Channel</span>
+                      <span className="text-xs font-semibold text-emerald-700 flex items-center">
+                        <Mail className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                        Credentials sent strictly to candidate&apos;s email
                       </span>
                     </div>
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-3 pt-2">
                     <button
-                      onClick={handleCopyStudentCredentials}
-                      className="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center space-x-2"
+                      onClick={() =>
+                        handleResendEmail({
+                          id: createdStudentResult.user.id,
+                          email: createdStudentResult.user.email,
+                          name: createdStudentResult.user.name,
+                        } as any)
+                      }
+                      disabled={resendingUserId === createdStudentResult.user.id}
+                      className="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/20 transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
                     >
-                      {copiedStudentCreds ? (
+                      {resendingUserId === createdStudentResult.user.id ? (
                         <>
-                          <Check className="w-4 h-4" />
-                          <span>Credentials Copied!</span>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Resending Email...</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="w-4 h-4" />
-                          <span>Copy Credentials</span>
+                          <Mail className="w-4 h-4" />
+                          <span>Resend Email to Candidate</span>
                         </>
                       )}
                     </button>
@@ -2093,12 +2437,12 @@ Portal URL: ${origin}/login`;
                       className="py-3 px-5 rounded-xl font-bold text-sm bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-all flex items-center justify-center space-x-2"
                     >
                       <Plus className="w-4 h-4" />
-                      <span>Add Another</span>
+                      <span>Add Another Candidate</span>
                     </button>
                   </div>
                 </div>
               ) : (
-                /* Form View: Input Student Details */
+                /* Form View: Input Student Details (Name, Email, Contact Number ONLY - Password Auto-Generated) */
                 <form onSubmit={handleCreateStudent} className="space-y-4">
                   {addStudentError && (
                     <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 flex items-start space-x-2.5">
@@ -2125,7 +2469,7 @@ Portal URL: ${origin}/login`;
                   {/* Email */}
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Email Address (Login Username) <span className="text-rose-500">*</span>
+                      Email Address (Login ID) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="email"
@@ -2135,42 +2479,35 @@ Portal URL: ${origin}/login`;
                       onChange={(e) => setStudentEmail(e.target.value)}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
                     />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      This email serves as the candidate&apos;s Login ID.
+                    </p>
                   </div>
 
-                  {/* Password */}
+                  {/* Contact Number */}
                   <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Password (Optional)
-                      </label>
-                      <span className="text-[11px] text-slate-400">
-                        Default: {studentName.trim() ? `${studentName.trim().toLowerCase().split(/\s+/)[0].replace(/[^a-z0-9]/g, '')}@123` : 'firstname@123'}
-                      </span>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type={showStudentPassword ? 'text' : 'password'}
-                        placeholder="Leave blank for auto-generated password"
-                        value={studentPassword}
-                        onChange={(e) => setStudentPassword(e.target.value)}
-                        className="w-full pl-4 pr-11 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowStudentPassword(!showStudentPassword)}
-                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-1"
-                        tabIndex={-1}
-                      >
-                        {showStudentPassword ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Contact Number <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="e.g. +91 9876543210"
+                      value={studentContactNumber}
+                      onChange={(e) => setStudentContactNumber(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                    />
                     <p className="text-[11px] text-slate-500 mt-1">
-                      If left blank, system automatically assigns <strong>{studentName.trim() ? `${studentName.trim().toLowerCase().split(/\s+/)[0].replace(/[^a-z0-9]/g, '')}@123` : '[firstname]@123'}</strong>.
+                      Candidate&apos;s phone or WhatsApp contact number.
                     </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200/80 text-xs text-blue-900 flex items-start space-x-2.5">
+                    <Mail className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Automated Credentials & Email Delivery:</span>{' '}
+                      You do not need to create a password manually. The system automatically creates a secure password and emails the credentials along with the examination link directly to the candidate.
+                    </div>
                   </div>
 
                   {/* Batch Selection (Optional) */}

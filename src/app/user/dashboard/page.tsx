@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   GraduationCap,
@@ -23,6 +23,8 @@ interface AssessmentState {
   totalQuestions?: number;
   durationMinutes?: number;
   isConfigured?: boolean;
+  isExamStarted?: boolean;
+  examStartedAt?: string;
   categories?: { name: string; quantity: number }[];
 }
 
@@ -31,11 +33,36 @@ export default function UserDashboard() {
   const [userName, setUserName] = useState('');
   const [assessmentState, setAssessmentState] = useState<AssessmentState>({
     status: 'NOT_STARTED',
+    isExamStarted: false,
   });
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
   const [error, setError] = useState('');
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const statusRes = await fetch('/api/assessments/status');
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        setAssessmentState((prev) => ({
+          ...prev,
+          status: statusData.status,
+          assessmentId: statusData.assessmentId,
+          startedAt: statusData.startedAt,
+          submittedAt: statusData.submittedAt,
+          totalQuestions: statusData.totalQuestions,
+          durationMinutes: statusData.durationMinutes,
+          isConfigured: statusData.isConfigured,
+          isExamStarted: statusData.isExamStarted,
+          examStartedAt: statusData.examStartedAt,
+          categories: statusData.categories || [],
+        }));
+      }
+    } catch (err) {
+      console.error('Error polling assessment status:', err);
+    }
+  }, []);
 
   useEffect(() => {
     async function loadData() {
@@ -48,22 +75,7 @@ export default function UserDashboard() {
         const userData = await userRes.json();
         setUserName(userData.user.name);
 
-        // Check if user has an assessment via read-only status endpoint
-        const statusRes = await fetch('/api/assessments/status');
-        const statusData = await statusRes.json();
-
-        if (statusRes.ok) {
-          setAssessmentState({
-            status: statusData.status,
-            assessmentId: statusData.assessmentId,
-            startedAt: statusData.startedAt,
-            submittedAt: statusData.submittedAt,
-            totalQuestions: statusData.totalQuestions,
-            durationMinutes: statusData.durationMinutes,
-            isConfigured: statusData.isConfigured,
-            categories: statusData.categories || [],
-          });
-        }
+        await checkStatus();
       } catch (err: any) {
         setError(err.message || 'Error loading dashboard');
       } finally {
@@ -71,7 +83,17 @@ export default function UserDashboard() {
       }
     }
     loadData();
-  }, [router]);
+  }, [router, checkStatus]);
+
+  // Polling to detect when Super Admin starts the exam live
+  useEffect(() => {
+    if (assessmentState.status === 'NOT_STARTED') {
+      const interval = setInterval(() => {
+        checkStatus();
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [assessmentState.status, checkStatus]);
 
   const handleStartClick = () => {
     if (assessmentState.status === 'COMPLETED') {
@@ -82,6 +104,13 @@ export default function UserDashboard() {
     if (assessmentState.status === 'NOT_STARTED' && assessmentState.isConfigured === false) {
       alert(
         'The administrator has not yet configured the questions for this assessment. Please contact your administrator.'
+      );
+      return;
+    }
+
+    if (assessmentState.status === 'NOT_STARTED' && assessmentState.isExamStarted === false) {
+      alert(
+        'The examination has not been started by the Super Administrator yet. Please wait until the Super Administrator clicks "Start Examination".'
       );
       return;
     }
@@ -107,7 +136,10 @@ export default function UserDashboard() {
 
       if (!res.ok || !data.success) {
         if (data.alreadyCompleted) {
-          setAssessmentState({ status: 'COMPLETED' });
+          setAssessmentState((prev) => ({ ...prev, status: 'COMPLETED' }));
+        }
+        if (data.isExamNotStarted) {
+          setAssessmentState((prev) => ({ ...prev, isExamStarted: false }));
         }
         setError(data.error || 'Failed to initialize assessment');
         setStarting(false);
@@ -289,6 +321,23 @@ export default function UserDashboard() {
               </div>
             </div>
 
+            {assessmentState.status === 'NOT_STARTED' && assessmentState.isExamStarted === false && (
+              <div className="bg-amber-500/10 border border-amber-500/30 p-5 rounded-2xl flex items-start space-x-3 text-xs text-amber-950">
+                <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+                <div className="space-y-1">
+                  <div className="font-bold text-amber-950 flex items-center gap-2">
+                    Waiting for Super Administrator to Start Examination
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 text-amber-800">
+                      Locked
+                    </span>
+                  </div>
+                  <p className="text-amber-900/90 leading-relaxed">
+                    The examination session has not been activated yet. The Super Administrator must click <strong>&ldquo;Start Examination&rdquo;</strong> before candidates are permitted to enter and attend the test. This portal checks live every few seconds.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {assessmentState.isConfigured === false && (
               <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 flex items-start space-x-3 text-xs text-amber-900">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-600 mt-0.5" />
@@ -303,15 +352,21 @@ export default function UserDashboard() {
                 onClick={handleStartClick}
                 disabled={
                   starting ||
-                  (assessmentState.status === 'NOT_STARTED' && assessmentState.isConfigured === false)
+                  (assessmentState.status === 'NOT_STARTED' &&
+                    (assessmentState.isConfigured === false || assessmentState.isExamStarted === false))
                 }
                 className={`w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 rounded-2xl text-base font-bold transition-all space-x-3 ${
-                  assessmentState.status === 'NOT_STARTED' && assessmentState.isConfigured === false
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                  assessmentState.status === 'NOT_STARTED' &&
+                  (assessmentState.isConfigured === false || assessmentState.isExamStarted === false)
+                    ? 'bg-slate-200 text-slate-500 cursor-not-allowed shadow-none border border-slate-300'
                     : 'text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 cursor-pointer disabled:opacity-75'
                 }`}
               >
-                <Play className="w-5 h-5 fill-current" />
+                {assessmentState.status === 'NOT_STARTED' && assessmentState.isExamStarted === false ? (
+                  <Clock className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Play className="w-5 h-5 fill-current" />
+                )}
                 <span>
                   {starting
                     ? 'Preparing Assessment...'
@@ -319,10 +374,14 @@ export default function UserDashboard() {
                     ? 'Continue Assessment'
                     : assessmentState.isConfigured === false
                     ? 'Awaiting Admin Question Configuration'
+                    : assessmentState.isExamStarted === false
+                    ? 'Waiting for Super Admin to Start Exam'
                     : 'Start Assessment'}
                 </span>
                 {(assessmentState.status === 'IN_PROGRESS' ||
-                  assessmentState.isConfigured !== false) && <ArrowRight className="w-5 h-5" />}
+                  (assessmentState.isConfigured !== false && assessmentState.isExamStarted !== false)) && (
+                  <ArrowRight className="w-5 h-5" />
+                )}
               </button>
             </div>
           </div>

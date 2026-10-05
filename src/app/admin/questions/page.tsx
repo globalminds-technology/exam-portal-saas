@@ -20,6 +20,7 @@ import {
   Loader2,
   CheckSquare,
 } from 'lucide-react';
+import CustomDropdown, { DropdownOption } from '@/components/custom-dropdown';
 
 interface QuestionItem {
   id: string;
@@ -244,6 +245,22 @@ export default function QuestionBankPage() {
     }
   };
 
+  const categoryOptions: DropdownOption[] = [
+    { value: '', label: 'All Categories' },
+    ...categories.map((c) => ({ value: c.id, label: c.name })),
+  ];
+
+  const statusOptions: DropdownOption[] = [
+    { value: '', label: 'All Statuses' },
+    { value: 'true', label: 'Active Only' },
+    { value: 'false', label: 'Inactive Only' },
+  ];
+
+  const questionAdminOptions: DropdownOption[] = [
+    { value: '', label: 'All Admins' },
+    ...availableAdmins.map((adm) => ({ value: adm.id, label: adm.name })),
+  ];
+
   return (
     <div className="w-full px-4 sm:px-8 lg:px-10 py-8 space-y-6">
       {/* Page Title & Actions */}
@@ -260,15 +277,15 @@ export default function QuestionBankPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           {!isDeleteMode ? (
             <button
               type="button"
               onClick={() => setIsDeleteMode(true)}
-              className="inline-flex items-center px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-sm font-semibold shadow-sm transition-all space-x-2"
+              className="inline-flex items-center justify-center h-10 px-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-sm font-semibold shadow-xs transition-all space-x-2 whitespace-nowrap cursor-pointer active:scale-95 shrink-0"
             >
-              <Trash2 className="w-4 h-4 text-rose-600" />
-              <span>Delete</span>
+              <Trash2 className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="whitespace-nowrap">Delete</span>
             </button>
           ) : (
             <>
@@ -281,10 +298,10 @@ export default function QuestionBankPage() {
                   }
                 }}
                 disabled={selectedQuestionIds.length === 0 && !selectAllAcrossPages}
-                className="inline-flex items-center px-4 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all space-x-2 animate-in fade-in"
+                className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all space-x-2 whitespace-nowrap cursor-pointer active:scale-95 shrink-0 animate-in fade-in"
               >
-                <Trash2 className="w-4 h-4" />
-                <span>
+                <Trash2 className="w-4 h-4 shrink-0" />
+                <span className="whitespace-nowrap">
                   {selectAllAcrossPages
                     ? `Delete All ${totalQuestions} Questions`
                     : selectedQuestionIds.length > 0
@@ -299,26 +316,26 @@ export default function QuestionBankPage() {
                   setSelectedQuestionIds([]);
                   setSelectAllAcrossPages(false);
                 }}
-                className="inline-flex items-center px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 shadow-sm transition-all space-x-1.5"
+                className="inline-flex items-center justify-center h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 shadow-xs transition-all space-x-1.5 whitespace-nowrap cursor-pointer active:scale-95 shrink-0"
               >
-                <span>Cancel</span>
+                <span className="whitespace-nowrap">Cancel</span>
               </button>
             </>
           )}
 
           <Link
             href="/admin/questions/import"
-            className="inline-flex items-center px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm transition-all space-x-2"
+            className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm transition-all space-x-2 whitespace-nowrap cursor-pointer active:scale-95 shrink-0"
           >
-            <Upload className="w-4 h-4" />
-            <span>Import Questions</span>
+            <Upload className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Import Questions</span>
           </Link>
           <Link
             href="/admin/questions/new"
-            className="inline-flex items-center px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 shadow-sm transition-all space-x-2"
+            className="inline-flex items-center justify-center h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 shadow-xs transition-all space-x-2 whitespace-nowrap cursor-pointer active:scale-95 shrink-0"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Question</span>
+            <Plus className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Add Question</span>
           </Link>
         </div>
       </div>
@@ -355,60 +372,51 @@ export default function QuestionBankPage() {
           </div>
 
           {/* Category Filter */}
-          <select
+          <CustomDropdown
+            label="Category"
             value={selectedCategory}
-            onChange={(e) => {
-              setSelectedCategory(e.target.value);
+            options={categoryOptions}
+            onChange={(val) => {
+              setSelectedCategory(val);
               setSelectedQuestionIds([]);
               setSelectAllAcrossPages(false);
               setPage(1);
             }}
-            className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 bg-white"
-          >
-            <option value="">All Categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            colorScheme="blue"
+            menuWidth="min-w-[220px] max-w-[300px]"
+          />
 
           {/* Status Filter */}
-          <select
+          <CustomDropdown
+            label="Status"
             value={selectedStatus}
-            onChange={(e) => {
-              setSelectedStatus(e.target.value);
+            options={statusOptions}
+            onChange={(val) => {
+              setSelectedStatus(val);
               setSelectedQuestionIds([]);
               setSelectAllAcrossPages(false);
               setPage(1);
             }}
-            className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 bg-white"
-          >
-            <option value="">All Statuses</option>
-            <option value="true">Active Only</option>
-            <option value="false">Inactive Only</option>
-          </select>
+            colorScheme="slate"
+            menuWidth="min-w-[180px]"
+          />
 
           {/* Admin Filter (Super Admin Only) */}
           {currentUser?.role === 'SUPER_ADMIN' && (
-            <select
+            <CustomDropdown
+              label="Admin"
               value={selectedAdminId}
-              onChange={(e) => {
-                setSelectedAdminId(e.target.value);
+              options={questionAdminOptions}
+              onChange={(val) => {
+                setSelectedAdminId(val);
                 setSelectedCategory('');
                 setSelectedQuestionIds([]);
                 setSelectAllAcrossPages(false);
                 setPage(1);
               }}
-              className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 bg-white"
-            >
-              <option value="">All Admins (All Questions)</option>
-              {availableAdmins.map((adm) => (
-                <option key={adm.id} value={adm.id}>
-                  Admin: {adm.name} ({adm.email})
-                </option>
-              ))}
-            </select>
+              colorScheme="emerald"
+              menuWidth="min-w-[220px] max-w-[300px]"
+            />
           )}
         </div>
 

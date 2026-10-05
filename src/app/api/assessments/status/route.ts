@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSessionFromCookies } from '@/lib/auth/session';
 import { db } from '@/lib/db';
 import { submitAssessment, EXAM_DURATION_MINUTES } from '@/lib/services/assessment.service';
+import { getExamControlState } from '@/lib/services/exam-control.service';
 
 export async function GET() {
   try {
@@ -61,11 +62,15 @@ export async function GET() {
     );
     const isConfigured = totalConfiguredQuestions > 0;
 
+    const examControl = await getExamControlState();
+
     if (!assessment) {
       return NextResponse.json({
         status: 'NOT_STARTED',
         hasAttempted: false,
         isConfigured,
+        isExamStarted: examControl.isExamStarted,
+        examStartedAt: examControl.startedAt,
         totalQuestions: totalConfiguredQuestions,
         durationMinutes: Math.max(1, totalConfiguredQuestions),
         categories: configuredCategories.map((c) => ({
@@ -116,6 +121,8 @@ export async function GET() {
       status: 'IN_PROGRESS',
       hasAttempted: false,
       isConfigured: true,
+      isExamStarted: examControl.isExamStarted,
+      examStartedAt: examControl.startedAt,
       totalQuestions: assessment.totalQuestions,
       durationMinutes: assessment.durationMinutes || assessment.totalQuestions,
       assessmentId: assessment.id,

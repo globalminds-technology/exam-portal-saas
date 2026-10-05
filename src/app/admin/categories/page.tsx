@@ -16,7 +16,9 @@ import {
   BookOpen,
   Search,
   X,
+  Users,
 } from 'lucide-react';
+import CustomDropdown, { DropdownOption } from '@/components/custom-dropdown';
 
 interface Category {
   id: string;
@@ -38,6 +40,15 @@ export default function CategoriesPage() {
   const [newCategoryQuantity, setNewCategoryQuantity] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'IN_EXAM' | 'SHORTAGE'>('ALL');
+
+  const adminOptions: DropdownOption[] = [
+    { value: '', label: 'All Admins' },
+    ...availableAdmins.map((adm) => ({
+      value: adm.id,
+      label: adm.name,
+      badge: adm.email,
+    })),
+  ];
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
@@ -408,23 +419,23 @@ export default function CategoriesPage() {
       </div>
 
       {/* Main Category Questions Configuration Table with Integrated Search & Filters */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm relative overflow-visible space-y-4">
         {/* Table Toolbar Header */}
-        <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col 2xl:flex-row 2xl:items-center 2xl:justify-between gap-4 relative z-20 overflow-visible">
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center">
-              <Sliders className="w-5 h-5 mr-2 text-blue-600" />
-              Category Question Quantities
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center whitespace-nowrap">
+              <Sliders className="w-5 h-5 mr-2 text-blue-600 shrink-0" />
+              <span>Category Question Quantities</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Specify how many questions from each category should be randomly assigned to each candidate.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* Search Filter Input */}
-            <div className="relative min-w-[200px] sm:min-w-[240px]">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+            <div className="relative flex-1 min-w-[170px] max-w-xs shrink-0">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search categories..."
@@ -436,7 +447,7 @@ export default function CategoriesPage() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   title="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -444,28 +455,25 @@ export default function CategoriesPage() {
               )}
             </div>
 
-            {/* Admin Filter Dropdown (Super Admin Only) */}
+            {/* Admin Filter Custom Dropdown (Super Admin Only) */}
             {currentUser?.role === 'SUPER_ADMIN' && (
-              <select
+              <CustomDropdown
+                label="Admin"
+                icon={<Users className="w-3.5 h-3.5 text-emerald-600" />}
                 value={selectedAdminId}
-                onChange={(e) => setSelectedAdminId(e.target.value)}
-                className="px-3 py-1.5 h-9 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-800"
-              >
-                <option value="">All Admins (All Categories)</option>
-                {availableAdmins.map((adm) => (
-                  <option key={adm.id} value={adm.id}>
-                    Admin: {adm.name} ({adm.email})
-                  </option>
-                ))}
-              </select>
+                options={adminOptions}
+                onChange={(val) => setSelectedAdminId(val)}
+                colorScheme="emerald"
+                menuWidth="min-w-[210px] max-w-[280px]"
+              />
             )}
 
             {/* Quick Filter Status Tabs */}
-            <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200/80 text-xs">
+            <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200/80 text-xs shrink-0">
               <button
                 type="button"
                 onClick={() => setFilterStatus('ALL')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-colors ${
+                className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
                   filterStatus === 'ALL'
                     ? 'bg-white text-blue-700 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -476,7 +484,7 @@ export default function CategoriesPage() {
               <button
                 type="button"
                 onClick={() => setFilterStatus('IN_EXAM')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-colors ${
+                className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
                   filterStatus === 'IN_EXAM'
                     ? 'bg-white text-indigo-700 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -488,7 +496,7 @@ export default function CategoriesPage() {
                 <button
                   type="button"
                   onClick={() => setFilterStatus('SHORTAGE')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-colors ${
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
                     filterStatus === 'SHORTAGE'
                       ? 'bg-white text-amber-700 shadow-xs'
                       : 'text-amber-700 hover:text-amber-900'
@@ -501,9 +509,10 @@ export default function CategoriesPage() {
 
             {/* Bulk Save Button */}
             <button
+              type="button"
               onClick={handleSaveAllQuantities}
               disabled={savingAll || loading}
-              className="px-4 py-2 h-9 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 disabled:opacity-50 flex items-center justify-center space-x-1.5 whitespace-nowrap"
+              className="px-4 py-2 h-9 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs disabled:opacity-50 flex items-center justify-center space-x-1.5 whitespace-nowrap cursor-pointer active:scale-95 shrink-0"
             >
               <Save className="w-3.5 h-3.5" />
               <span>{savingAll ? 'Saving All...' : 'Save All Quantities'}</span>

@@ -13,6 +13,10 @@ import {
   Upload,
   Layers,
   ChevronRight,
+  Radio,
+  Power,
+  Clock,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -42,21 +46,48 @@ export default function AdminDashboardPage() {
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
+  const [examControl, setExamControl] = useState<{
+    isExamStarted: boolean;
+    startedAt: string | null;
+    startedBy?: { name: string; email: string } | null;
+  }>({
+    isExamStarted: false,
+    startedAt: null,
+  });
+  const [isTogglingExam, setIsTogglingExam] = useState(false);
+  const [examControlMsg, setExamControlMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     async function loadStats() {
       try {
-        const res = await fetch('/api/admin/dashboard-stats');
-        if (!res.ok) {
+        const [statsRes, userRes, examRes] = await Promise.all([
+          fetch('/api/admin/dashboard-stats'),
+          fetch('/api/auth/me'),
+          fetch('/api/admin/exam-control'),
+        ]);
+
+        if (!statsRes.ok) {
           router.push('/login');
           return;
         }
-        const data = await res.json();
+
+        const data = await statsRes.json();
         if (data.error || !Array.isArray(data.recentAssessments)) {
           router.push('/login');
           return;
         }
         setStats(data);
+
+        if (userRes.ok) {
+          const uData = await userRes.json();
+          if (uData.user) setCurrentUser(uData.user);
+        }
+
+        if (examRes.ok) {
+          const eData = await examRes.json();
+          if (eData.data) setExamControl(eData.data);
+        }
       } catch (err) {
         console.error('Failed to load stats:', err);
       } finally {
@@ -65,6 +96,47 @@ export default function AdminDashboardPage() {
     }
     loadStats();
   }, [router]);
+
+  const handleToggleExam = async (shouldStart: boolean) => {
+    const actionWord = shouldStart ? 'START' : 'STOP';
+    const confirmMessage = shouldStart
+      ? 'Are you sure you want to START the examination?\n\nOnce started, registered candidates will immediately be able to attend and complete their assessment.'
+      : 'Are you sure you want to STOP the examination?\n\nThis will prevent any new candidate entries.';
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setIsTogglingExam(true);
+    setExamControlMsg(null);
+
+    try {
+      const res = await fetch('/api/admin/exam-control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isExamStarted: shouldStart }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Failed to ${actionWord.toLowerCase()} examination.`);
+      }
+
+      setExamControl(data.data);
+      setExamControlMsg({
+        text: data.message || `Examination successfully ${shouldStart ? 'started' : 'stopped'}.`,
+        type: 'success',
+      });
+      setTimeout(() => setExamControlMsg(null), 6000);
+    } catch (err: any) {
+      setExamControlMsg({
+        text: err.message || 'An error occurred while updating examination state.',
+        type: 'error',
+      });
+    } finally {
+      setIsTogglingExam(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -92,21 +164,118 @@ export default function AdminDashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <Link
             href="/admin/questions/import"
-            className="inline-flex items-center px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm transition-all space-x-2"
+            className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm transition-all space-x-2 whitespace-nowrap cursor-pointer active:scale-95 shrink-0"
           >
-            <Upload className="w-4 h-4" />
-            <span>Import Questions</span>
+            <Upload className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Import Questions</span>
           </Link>
           <Link
             href="/admin/results"
-            className="inline-flex items-center px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 shadow-sm transition-all space-x-2"
+            className="inline-flex items-center justify-center h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 shadow-xs transition-all space-x-2 whitespace-nowrap cursor-pointer active:scale-95 shrink-0"
           >
-            <FileCheck2 className="w-4 h-4" />
-            <span>View Results</span>
+            <FileCheck2 className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">View Results</span>
           </Link>
+        </div>
+      </div>
+
+      {/* Super Admin Examination Session Control Card */}
+      <div
+        className={`rounded-2xl p-4 sm:px-6 sm:py-4 border transition-all shadow-sm ${
+          examControl.isExamStarted
+            ? 'bg-gradient-to-r from-emerald-50/70 via-white to-teal-50/40 border-emerald-300'
+            : 'bg-gradient-to-r from-slate-50/80 via-white to-amber-50/30 border-slate-200'
+        }`}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="space-y-1.5 max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center border shrink-0 ${
+                  examControl.isExamStarted
+                    ? 'bg-emerald-100 border-emerald-200 text-emerald-700'
+                    : 'bg-amber-100 border-amber-200 text-amber-700'
+                }`}
+              >
+                <Radio className={`w-3.5 h-3.5 ${examControl.isExamStarted ? 'animate-pulse text-emerald-600' : 'text-amber-600'}`} />
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Global Session Controller
+              </span>
+              <span
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border gap-1.5 ${
+                  examControl.isExamStarted
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    examControl.isExamStarted ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'
+                  }`}
+                />
+                <span>{examControl.isExamStarted ? 'EXAMINATION LIVE' : 'SESSION LOCKED'}</span>
+              </span>
+            </div>
+
+            <h3 className="text-base sm:text-lg font-bold tracking-tight text-slate-900">
+              {examControl.isExamStarted
+                ? 'Examination Is Active — Candidates Can Attend'
+                : 'Examination Is Not Started — Candidate Entry Is Locked'}
+            </h3>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              {examControl.isExamStarted
+                ? `The assessment is currently live. Registered candidates are authorized to begin their single attempt. Started on ${
+                    examControl.startedAt ? new Date(examControl.startedAt).toLocaleString() : 'recently'
+                  }${examControl.startedBy ? ` by ${examControl.startedBy.name}` : ''}.`
+                : 'Candidates can log in, but cannot attend or start their assessment until the Super Administrator initiates the exam session with the button.'}
+            </p>
+
+            {examControlMsg && (
+              <div
+                className={`p-2.5 rounded-lg text-xs font-semibold flex items-center space-x-2 ${
+                  examControlMsg.type === 'success'
+                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border border-rose-200 text-rose-800'
+                }`}
+              >
+                <span>{examControlMsg.text}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+            {currentUser?.role === 'SUPER_ADMIN' ? (
+              !examControl.isExamStarted ? (
+                <button
+                  onClick={() => handleToggleExam(true)}
+                  disabled={isTogglingExam}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-all flex items-center justify-center space-x-2 cursor-pointer active:scale-95 disabled:opacity-75 border border-teal-600/20"
+                >
+                  <PlayCircle className="w-4 h-4 text-white" />
+                  <span>{isTogglingExam ? 'Starting Exam...' : 'Start Examination'}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleToggleExam(false)}
+                  disabled={isTogglingExam}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-bold text-xs sm:text-sm shadow-sm transition-all flex items-center justify-center space-x-2 cursor-pointer active:scale-95 disabled:opacity-75 border border-rose-600/20"
+                >
+                  <Power className="w-4 h-4 text-white" />
+                  <span>{isTogglingExam ? 'Stopping...' : 'Stop Examination'}</span>
+                </button>
+              )
+            ) : (
+              <div className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-center space-x-2">
+                <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0" />
+                <span>Super Administrator exclusive control</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

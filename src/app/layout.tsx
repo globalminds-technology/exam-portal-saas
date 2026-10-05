@@ -3,9 +3,14 @@ import './globals.css';
 import AppLayout from '@/components/app-layout';
 
 export const metadata: Metadata = {
-  title: 'ExamPortal - Randomized Online Assessment Platform',
+  title: 'Global Minds - Examination & Assessment System',
   description:
-    'Enterprise-grade randomized online assessment platform with secure question import, dynamic distribution, server-side evaluation, and comprehensive administrative analytics.',
+    'Global Minds - Build Skills | Own The Future. Enterprise randomized examination and assessment system.',
+  icons: {
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 
 export default function RootLayout({

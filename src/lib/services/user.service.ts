@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { sendCandidateCredentialsEmail } from '@/lib/services/email.service';
 
 export async function getUsers(filters: {
   page?: number;
@@ -55,6 +56,7 @@ export async function getUsers(filters: {
         id: true,
         name: true,
         email: true,
+        contactNumber: true,
         role: true,
         isActive: true,
         createdById: true,
@@ -306,6 +308,7 @@ export async function createUser(
   data: {
     name: string;
     email: string;
+    contactNumber?: string | null;
     password?: string;
     role?: 'ADMIN' | 'USER';
     batchId?: string | null;
@@ -323,6 +326,7 @@ export async function createUser(
 
   const trimmedName = data.name.trim();
   const normalizedEmail = data.email.trim().toLowerCase();
+  const trimmedContactNumber = data.contactNumber ? data.contactNumber.trim() : null;
 
   if (!trimmedName) {
     throw new Error(targetRole === 'ADMIN' ? 'Administrator name is required.' : 'Candidate name is required.');
@@ -342,18 +346,19 @@ export async function createUser(
     throw new Error(`A user with email "${normalizedEmail}" already exists in the system.`);
   }
 
-  // Determine password
+  // Determine password - automatically generated for candidate
   let plainPassword = data.password?.trim();
   if (!plainPassword) {
     if (targetRole === 'ADMIN') {
       plainPassword = 'Admin@' + Math.floor(100000 + Math.random() * 900000);
     } else {
-      const firstName =
-        trimmedName
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, '')
-          .split(/\s+/)[0] || 'candidate';
-      plainPassword = `${firstName}@123`;
+      // Auto-generate a secure, memorable password (Prefix + Symbol + 4 Digits)
+      const prefixes = ['Exam', 'Pass', 'Test', 'Cert', 'Grad', 'Prep'];
+      const symbols = ['@', '#', '!', '$'];
+      const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+      const symbol = symbols[Math.floor(Math.random() * symbols.length)];
+      const digits = Math.floor(1000 + Math.random() * 9000);
+      plainPassword = `${prefix}${symbol}${digits}`;
     }
   }
 
@@ -380,6 +385,7 @@ export async function createUser(
     data: {
       name: trimmedName,
       email: normalizedEmail,
+      contactNumber: trimmedContactNumber,
       passwordHash,
       role: targetRole as any,
       isActive: true,
@@ -390,6 +396,7 @@ export async function createUser(
       id: true,
       name: true,
       email: true,
+      contactNumber: true,
       role: true,
       isActive: true,
       createdAt: true,
@@ -411,17 +418,39 @@ export async function createUser(
     }).catch(() => {});
   }
 
+  // Send credentials and exam portal link to user's email directly
+  let emailResult: { success: boolean; error?: string; messageId?: string; isMock?: boolean } = {
+    success: false,
+    error: 'Email dispatch skipped for administrator role.',
+  };
+  if (targetRole === 'USER') {
+    try {
+      emailResult = await sendCandidateCredentialsEmail({
+        name: trimmedName,
+        email: normalizedEmail,
+        contactNumber: trimmedContactNumber,
+        password: plainPassword,
+      });
+    } catch (err: any) {
+      console.error('Failed to send candidate credentials email:', err);
+      emailResult = { success: false, error: err.message || 'Failed to send credentials email' };
+    }
+  }
+
   return {
     user,
     plainPassword,
+    emailResult,
   };
 }
 
 export async function createCandidateUser(data: {
   name: string;
   email: string;
+  contactNumber?: string | null;
   password?: string;
   batchId?: string | null;
 }) {
   return createUser({ ...data, role: 'USER' });
 }
+

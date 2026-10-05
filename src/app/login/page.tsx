@@ -81,14 +81,18 @@ function LoginForm() {
     <div className="min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-6">
         <div className="text-center">
-          <div className="mx-auto w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/25">
-            <GraduationCap className="w-7 h-7" />
+          <div className="mx-auto w-24 h-24 rounded-3xl bg-white border border-slate-200/90 shadow-xl shadow-slate-200/60 flex items-center justify-center overflow-hidden p-2.5 mb-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Global Minds" className="w-full h-full object-contain" />
           </div>
-          <h2 className="mt-4 text-3xl font-extrabold text-slate-900 tracking-tight">
-            Sign in to ExamPortal
+          <h2 className="mt-3 text-3xl font-black text-slate-900 tracking-tight">
+            GLOBAL MINDS
           </h2>
+          <p className="mt-1 text-xs font-bold uppercase tracking-wider text-teal-700">
+            Build Skills • Own The Future
+          </p>
           <p className="mt-2 text-sm text-slate-600">
-            Enter your credentials to access your assessment or administration portal
+            Sign in with your email to attend the examination
           </p>
         </div>
 

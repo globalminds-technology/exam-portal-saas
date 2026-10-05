@@ -9,14 +9,18 @@ export default function HomePage() {
     <div className="min-h-full">
       {/* Hero Section */}
       <div className="relative overflow-hidden bg-gradient-to-b from-blue-50/80 via-white to-slate-50 border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-20 text-center">
-          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-blue-100/70 text-blue-700 text-xs font-semibold mb-6 border border-blue-200 shadow-sm">
-            <ShieldCheck className="w-4 h-4" />
-            <span>High-Security Enterprise Assessment Platform</span>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-20 text-center">
+          <div className="mx-auto w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-white border border-slate-200/90 shadow-xl shadow-slate-200/60 flex items-center justify-center overflow-hidden p-2.5 mb-5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Global Minds" className="w-full h-full object-contain" />
           </div>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 tracking-tight max-w-4xl mx-auto leading-tight">
-            Randomized Online Examination &amp; Assessment System
+          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-teal-50 text-teal-800 text-xs font-bold mb-4 border border-teal-200 shadow-sm uppercase tracking-wider">
+            <span>GLOBAL MINDS • BUILD SKILLS | OWN THE FUTURE</span>
+          </div>
+
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight max-w-4xl mx-auto leading-tight">
+            Secure Online Examination &amp; Assessment System
           </h1>
 
           <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">

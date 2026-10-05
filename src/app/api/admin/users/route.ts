@@ -6,6 +6,7 @@ import { z } from 'zod';
 const createUserSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   email: z.string().email('Please enter a valid email address'),
+  contactNumber: z.string().optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters').optional().or(z.literal('')),
   role: z.enum(['ADMIN', 'USER']).optional().default('USER'),
   batchId: z.string().optional().nullable(),
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
       {
         name: result.data.name,
         email: result.data.email,
+        contactNumber: result.data.contactNumber || null,
         password: result.data.password || undefined,
         role: result.data.role,
         batchId: result.data.batchId || null,
@@ -87,6 +89,7 @@ export async function POST(request: NextRequest) {
         message: `${roleLabel} ${created.user.name} created successfully.`,
         user: created.user,
         plainPassword: created.plainPassword,
+        emailResult: created.emailResult,
       },
       { status: 201 }
     );

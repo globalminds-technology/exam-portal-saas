@@ -20,6 +20,7 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
+import CustomDropdown, { DropdownOption } from '@/components/custom-dropdown';
 
 interface ResultItem {
   id: string;
@@ -181,6 +182,17 @@ export default function AdminResultsPage() {
 
   const selectedBatch = batches.find((b) => b.id === selectedBatchId) ?? null;
 
+  const batchOptions: DropdownOption[] = [
+    { value: '', label: 'All Batches' },
+    ...batches
+      .filter((b) => b.totalCandidates > 0)
+      .map((b) => ({
+        value: b.id,
+        label: b.batchName,
+        count: b.totalCandidates,
+      })),
+  ];
+
   return (
     <div className="w-full px-4 sm:px-8 lg:px-10 py-8 space-y-6">
       {/* Page Header */}
@@ -226,27 +238,18 @@ export default function AdminResultsPage() {
       {/* Batch Selector */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <Layers className="w-4 h-4 text-blue-500 shrink-0" />
-            <span className="text-sm font-bold text-slate-700 shrink-0">Filter by Batch:</span>
-          </div>
-          <select
+          <CustomDropdown
+            label="Batch"
+            icon={<Layers className="w-4 h-4 text-blue-500" />}
             value={selectedBatchId}
-            onChange={(e) => {
-              setSelectedBatchId(e.target.value);
+            options={batchOptions}
+            onChange={(val) => {
+              setSelectedBatchId(val);
               setPage(1);
             }}
-            className="flex-1 sm:max-w-md px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-          >
-            <option value="">— All Batches —</option>
-            {batches
-              .filter((b) => b.totalCandidates > 0)
-              .map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.batchName} ({b.totalCandidates} candidates · {b.createdAt ? new Date(b.createdAt).toLocaleDateString() : ''})
-                </option>
-              ))}
-          </select>
+            colorScheme="blue"
+            menuWidth="min-w-[280px] max-w-[380px]"
+          />
         </div>
 
         {/* Batch Stats Cards */}

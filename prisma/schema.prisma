@@ -42,6 +42,7 @@ model User {
   id                String         @id @default(cuid())
   name              String
   email             String         @unique
+  contactNumber     String?
   passwordHash      String
   role              Role           @default(USER)
   isActive          Boolean        @default(true)
@@ -54,6 +55,7 @@ model User {
   createdQuestions  Question[]     @relation("CreatedQuestions")
   createdBatches    ImportBatch[]  @relation("CreatedBatches")
   assessments       Assessment[]
+  startedExams      ExamControl[]  @relation("ExamStartedBy")
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -183,4 +185,13 @@ model AssessmentAnswer {
 
   @@unique([assessmentId, questionId])
   @@index([assessmentId])
+}
+
+model ExamControl {
+  id             String    @id @default("global")
+  isExamStarted  Boolean   @default(false)
+  startedAt      DateTime?
+  startedById    String?
+  startedBy      User?     @relation("ExamStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+  updatedAt      DateTime  @updatedAt
 }

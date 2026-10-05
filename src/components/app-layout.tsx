@@ -180,16 +180,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex flex-col bg-slate-50">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
           <div className="w-full px-4 sm:px-8 lg:px-10 h-16 flex items-center justify-center">
-            <Link href="/" className="flex items-center space-x-2.5 focus:outline-none">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-                <GraduationCap className="w-5 h-5" />
+            <Link href="/" className="flex items-center space-x-3 focus:outline-none group">
+              <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/90 shadow-sm flex items-center justify-center overflow-hidden p-1 shrink-0 transition-transform group-hover:scale-105">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo.png" alt="Global Minds" className="w-full h-full object-contain" />
               </div>
               <div className="flex flex-col">
-                <span className="font-bold text-slate-900 text-lg tracking-tight leading-none">
-                  ExamPortal
+                <span className="font-black text-slate-900 text-lg tracking-tight leading-none">
+                  GLOBAL MINDS
                 </span>
-                <span className="text-[10px] font-semibold text-blue-600 tracking-wider uppercase mt-0.5">
-                  Assessment Platform
+                <span className="text-[9px] font-bold text-teal-700 tracking-wider uppercase mt-1">
+                  Build Skills • Own The Future
                 </span>
               </div>
             </Link>
@@ -208,16 +209,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             {/* Left: Brand & Dashboard Navigation Link */}
             <div className="flex items-center space-x-6 sm:space-x-8">
-              <Link href="/user/dashboard" className="flex items-center space-x-2.5 focus:outline-none group">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 transition-transform group-hover:scale-105">
-                  <GraduationCap className="w-5 h-5" />
+              <Link href="/user/dashboard" className="flex items-center space-x-3 focus:outline-none group">
+                <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/90 shadow-sm flex items-center justify-center overflow-hidden p-1 shrink-0 transition-transform group-hover:scale-105">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/logo.png" alt="Global Minds" className="w-full h-full object-contain" />
                 </div>
                 <div className="flex flex-col">
-                  <span className="font-extrabold text-slate-900 text-lg tracking-tight leading-none">
-                    ExamPortal
+                  <span className="font-black text-slate-900 text-lg tracking-tight leading-none">
+                    GLOBAL MINDS
                   </span>
-                  <span className="text-[10px] font-bold text-blue-600 tracking-wider uppercase mt-0.5">
-                    Assessment Platform
+                  <span className="text-[9px] font-bold text-teal-700 tracking-wider uppercase mt-1">
+                    Candidate Examination Portal
                   </span>
                 </div>
               </Link>
@@ -279,10 +281,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           href={user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? '/admin/dashboard' : '/user/dashboard'}
           className="flex items-center space-x-2.5"
         >
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-sm">
-            <GraduationCap className="w-4 h-4" />
+          <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center overflow-hidden p-1 shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Global Minds" className="w-full h-full object-contain" />
           </div>
-          <span className="font-bold text-slate-900 text-base">ExamPortal</span>
+          <span className="font-black text-slate-900 text-base">GLOBAL MINDS</span>
         </Link>
 
         <button
@@ -304,16 +307,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="space-y-6">
               {/* Brand */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center space-x-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-                    <GraduationCap className="w-5 h-5" />
+                <div className="flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-xl bg-white border border-slate-200/90 shadow-sm flex items-center justify-center overflow-hidden p-1 shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/logo.png" alt="Global Minds" className="w-full h-full object-contain" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="font-bold text-slate-900 text-base tracking-tight leading-none">
-                      ExamPortal
+                    <span className="font-black text-slate-900 text-base tracking-tight leading-none">
+                      GLOBAL MINDS
                     </span>
-                    <span className="text-[9px] font-bold text-blue-600 tracking-wider uppercase mt-0.5">
-                      Assessment Platform
+                    <span className="text-[9px] font-bold text-teal-700 tracking-wider uppercase mt-1">
+                      Build Skills • Own Future
                     </span>
                   </div>
                 </div>
@@ -388,15 +392,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             href={user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? '/admin/dashboard' : '/user/dashboard'}
             className="flex items-center space-x-3 focus:outline-none group"
           >
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/25 transition-transform group-hover:scale-105">
-              <GraduationCap className="w-5 h-5" />
+            <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex items-center justify-center overflow-hidden p-1.5 shrink-0 transition-transform group-hover:scale-105">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.png" alt="Global Minds" className="w-full h-full object-contain" />
             </div>
-            <div className="flex flex-col">
-              <span className="font-extrabold text-slate-900 text-lg tracking-tight leading-none">
-                ExamPortal
+            <div className="flex flex-col min-w-0">
+              <span className="font-black text-slate-900 text-lg tracking-tight leading-none">
+                GLOBAL MINDS
               </span>
-              <span className="text-[10px] font-bold text-blue-600 tracking-wider uppercase mt-1">
-                Assessment Platform
+              <span className="text-[9px] font-extrabold text-teal-700 tracking-wider uppercase mt-1 truncate">
+                Build Skills • Own Future
               </span>
             </div>
           </Link>

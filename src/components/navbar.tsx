@@ -72,12 +72,13 @@ export default function Navbar() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm">
-              <GraduationCap className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center overflow-hidden p-1 shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.png" alt="Global Minds" className="w-full h-full object-contain" />
             </div>
             <div>
-              <span className="font-bold text-slate-900 text-lg">ExamPortal</span>
-              <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+              <span className="font-black text-slate-900 text-lg">GLOBAL MINDS</span>
+              <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                 Live Examination
               </span>
             </div>
@@ -136,17 +137,18 @@ export default function Navbar() {
           <div className="flex items-center space-x-8">
             <Link
               href={isAdminUser ? '/admin/dashboard' : user ? '/user/dashboard' : '/'}
-              className="flex items-center space-x-2.5 focus:outline-none"
+              className="flex items-center space-x-3 focus:outline-none group"
             >
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-                <GraduationCap className="w-5 h-5" />
+              <div className="w-11 h-11 rounded-xl bg-white border border-slate-200/90 shadow-sm flex items-center justify-center overflow-hidden p-1 shrink-0 transition-transform group-hover:scale-105">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo.png" alt="Global Minds" className="w-full h-full object-contain" />
               </div>
               <div className="flex flex-col">
-                <span className="font-bold text-slate-900 text-lg tracking-tight leading-none">
-                  ExamPortal
+                <span className="font-black text-slate-900 text-lg tracking-tight leading-none">
+                  GLOBAL MINDS
                 </span>
-                <span className="text-[10px] font-semibold text-blue-600 tracking-wider uppercase mt-0.5">
-                  Assessment Platform
+                <span className="text-[9px] font-bold text-teal-700 tracking-wider uppercase mt-1">
+                  Build Skills • Own Future
                 </span>
               </div>
             </Link>
