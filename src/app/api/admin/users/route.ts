@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 const createUserSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  email: z.string().email('Please enter a valid email address'),
+  email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
   contactNumber: z.string().optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters').optional().or(z.literal('')),
   role: z.enum(['ADMIN', 'USER']).optional().default('USER'),
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     const created = await createUser(
       {
         name: result.data.name,
-        email: result.data.email,
+        email: result.data.email || undefined,
         contactNumber: result.data.contactNumber || null,
         password: result.data.password || undefined,
         role: result.data.role,

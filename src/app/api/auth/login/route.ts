@@ -22,27 +22,42 @@ export async function POST(request: NextRequest) {
     }
 
     const { email: rawIdentifier, password } = result.data;
-    const identifier = rawIdentifier.toLowerCase().trim();
+    const identifier = rawIdentifier.trim();
+    const lowerIdentifier = identifier.toLowerCase();
 
-    // Query by exact email match
+    // 1. Query by exact email match
     let user = await db.user.findUnique({
-      where: { email: identifier },
+      where: { email: lowerIdentifier },
     });
 
-    // If not found and input didn't include an '@', attempt username-to-email prefix match
-    if (!user && !identifier.includes('@')) {
-      user = await db.user.findFirst({
+    // 2. Query by mobile number / contact number
+    if (!user) {
+      const cleanPhone = identifier.replace(/[\s\-\(\)\+]/g, '');
+      user = await (db.user as any).findFirst({
         where: {
           OR: [
-            { email: { startsWith: `${identifier}@`, mode: 'insensitive' } },
-            { email: { equals: identifier, mode: 'insensitive' } },
+            { contactNumber: identifier },
+            { contactNumber: lowerIdentifier },
+            ...(cleanPhone ? [{ contactNumber: cleanPhone }] : []),
           ],
         },
       });
     }
 
-    // If still not found, handle common admin typos (e.g. admin@assessmenl.com with 'l' instead of 't')
-    if (!user && identifier.startsWith('admin@')) {
+    // 3. If not found and input didn't include an '@', attempt username-to-email prefix match (Login ID)
+    if (!user && !identifier.includes('@')) {
+      user = await db.user.findFirst({
+        where: {
+          OR: [
+            { email: { startsWith: `${lowerIdentifier}@`, mode: 'insensitive' } },
+            { email: { equals: lowerIdentifier, mode: 'insensitive' } },
+          ],
+        },
+      });
+    }
+
+    // 4. If still not found, handle common admin shortcuts
+    if (!user && lowerIdentifier.startsWith('admin@')) {
       user = await db.user.findFirst({
         where: {
           role: 'ADMIN',
@@ -51,7 +66,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!user && identifier.startsWith('superadmin@')) {
+    if (!user && lowerIdentifier.startsWith('superadmin@')) {
       user = await db.user.findFirst({
         where: {
           role: 'SUPER_ADMIN' as any,
@@ -61,7 +76,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!user) {
-      return NextResponse.json({ error: 'Invalid username/email or password' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Invalid Login ID, mobile number, or password.' },
+        { status: 401 }
+      );
     }
 
     if (!user.isActive) {
@@ -84,7 +102,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isValidPassword) {
-      return NextResponse.json({ error: 'Invalid username/email or password' }, { status: 401 });
+      return NextResponse.json({ error: 'Invalid Login ID, mobile number, or password.' }, { status: 401 });
     }
 
     await setSessionCookie({

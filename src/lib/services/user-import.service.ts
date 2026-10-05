@@ -4,11 +4,13 @@ import { db } from '@/lib/db';
 
 export interface RawCandidateRow {
   name: string;
+  mobileNumber?: string;
   email?: string;
 }
 
 export interface GeneratedCandidateCredential {
   name: string;
+  mobileNumber: string;
   username: string;
   email: string;
   plainPassword: string;
@@ -27,39 +29,57 @@ export interface ImportRosterResult {
 }
 
 /**
- * Generates a clean, normalized base username from a full name.
- * E.g., "Alex Johnson Jr." -> "alex.johnson"
+ * Extracts candidate's clean first name in lowercase, filtering out common titles.
+ * E.g., "Mr. Rahul Sharma" -> "rahul", "Dr. Emily Watson" -> "emily", "Saanvi Bose" -> "saanvi"
  */
-export function generateBaseUsername(name: string): string {
-  const cleaned = name
+export function extractFirstName(name: string): string {
+  const titles = new Set(['mr', 'mrs', 'ms', 'miss', 'dr', 'prof', 'shri', 'smt']);
+  const parts = name
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9\s]/g, '')
     .split(/\s+/)
     .filter(Boolean);
 
-  if (cleaned.length === 0) {
-    return 'candidate';
+  const filtered = parts.filter((p) => !titles.has(p));
+  if (filtered.length > 0) {
+    return filtered[0];
   }
-  if (cleaned.length === 1) {
-    return cleaned[0];
-  }
-  return `${cleaned[0]}.${cleaned[1]}`;
+  return parts.length > 0 ? parts[0] : 'user';
 }
 
 /**
- * Generates candidate password as first name in lowercase + "@123".
- * E.g., "Saanvi Bose" -> "saanvi@123", "Ananya Singh" -> "ananya@123"
+ * Generates a clean, normalized base username (Login ID) from a full name.
+ * E.g., "Rahul Sharma" -> "rahul.sharma", "John Smith Jr." -> "john.smith"
  */
-export function generateCandidatePassword(name: string): string {
-  const cleaned = name
+export function generateBaseUsername(name: string): string {
+  const titles = new Set(['mr', 'mrs', 'ms', 'miss', 'dr', 'prof', 'shri', 'smt']);
+  const parts = name
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9\s]/g, '')
     .split(/\s+/)
     .filter(Boolean);
 
-  const firstName = cleaned.length > 0 ? cleaned[0] : 'user';
+  const filtered = parts.filter((p) => !titles.has(p));
+  const tokens = filtered.length > 0 ? filtered : parts;
+
+  if (tokens.length === 0) {
+    return 'candidate';
+  }
+  if (tokens.length === 1) {
+    return tokens[0];
+  }
+  return `${tokens[0]}.${tokens[1]}`;
+}
+
+/**
+ * Generates candidate password strictly formatted as:
+ * <first_name_in_lowercase>@123
+ * E.g., "Rahul Sharma" -> "rahul@123", "Saanvi Bose" -> "saanvi@123", "John" -> "john@123"
+ */
+export function generateCandidatePassword(name: string): string {
+  const firstName = extractFirstName(name);
   return `${firstName}@123`;
 }
 
@@ -77,7 +97,7 @@ export function generateSecurePassword(): string {
 }
 
 /**
- * Parses an Excel (.xlsx, .xls) or CSV buffer into a list of candidate names.
+ * Parses an Excel (.xlsx, .xls) or CSV buffer into a list of candidate names and mobile numbers.
  */
 export function parseCandidateWorkbook(buffer: Buffer): RawCandidateRow[] {
   const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -96,45 +116,82 @@ export function parseCandidateWorkbook(buffer: Buffer): RawCandidateRow[] {
   const candidateRows: RawCandidateRow[] = [];
 
   for (const row of jsonData) {
-    // Tolerant column header matching for Candidate Name
     let nameVal = '';
+    let mobileVal = '';
     let emailVal = '';
 
-    for (const [key, val] of Object.entries(row)) {
-      const normalizedKey = key.trim().toLowerCase().replace(/[^a-z]/g, '');
+    for (const [key, rawVal] of Object.entries(row)) {
+      if (rawVal === undefined || rawVal === null) continue;
+      const valStr = String(rawVal).trim();
+      if (!valStr) continue;
 
+      const normalizedKey = key.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      // Name matching
       if (
-        ['name', 'fullname', 'candidatename', 'studentname', 'username', 'user'].includes(
+        ['name', 'fullname', 'candidatename', 'studentname', 'username', 'user', 'candidate', 'student'].includes(
           normalizedKey
-        ) &&
-        typeof val === 'string' &&
-        val.trim()
+        )
       ) {
-        nameVal = val.trim();
+        nameVal = valStr;
       }
 
+      // Mobile / Phone matching
       if (
-        ['email', 'emailaddress', 'mail', 'candidateemail'].includes(normalizedKey) &&
-        typeof val === 'string' &&
-        val.trim()
+        [
+          'mobile',
+          'mobilenumber',
+          'mobilephone',
+          'phone',
+          'phonenumber',
+          'contact',
+          'contactnumber',
+          'cell',
+          'cellphone',
+          'whatsapp',
+          'number',
+          'tel',
+          'telephone',
+        ].includes(normalizedKey)
       ) {
-        emailVal = val.trim().toLowerCase();
+        mobileVal = valStr.replace(/\.0+$/, '');
+      }
+
+      // Email matching (optional if provided)
+      if (
+        ['email', 'emailaddress', 'mail', 'candidateemail'].includes(normalizedKey)
+      ) {
+        emailVal = valStr.toLowerCase();
       }
     }
 
-    // Fallback: If no header matched 'name', check first non-empty column
+    // Fallback if no explicit name header: first column with alphabetic text
     if (!nameVal) {
-      const firstEntry = Object.values(row).find(
-        (v) => typeof v === 'string' && v.trim().length > 1
+      const firstTextEntry = Object.values(row).find(
+        (v) => typeof v === 'string' && v.trim().length > 1 && !/^\+?[0-9\s\-]+$/.test(v.trim())
       );
-      if (firstEntry && typeof firstEntry === 'string') {
-        nameVal = firstEntry.trim();
+      if (firstTextEntry && typeof firstTextEntry === 'string') {
+        nameVal = firstTextEntry.trim();
+      }
+    }
+
+    // Fallback if no explicit mobile header: find any column that resembles a phone number (7-15 digits)
+    if (!mobileVal) {
+      for (const rawVal of Object.values(row)) {
+        if (rawVal === undefined || rawVal === null) continue;
+        const strVal = String(rawVal).trim().replace(/\.0+$/, '');
+        const cleanDigits = strVal.replace(/[^0-9]/g, '');
+        if (cleanDigits.length >= 7 && cleanDigits.length <= 15) {
+          mobileVal = strVal;
+          break;
+        }
       }
     }
 
     if (nameVal) {
       candidateRows.push({
         name: nameVal,
+        mobileNumber: mobileVal || undefined,
         email: emailVal || undefined,
       });
     }
@@ -142,7 +199,7 @@ export function parseCandidateWorkbook(buffer: Buffer): RawCandidateRow[] {
 
   if (candidateRows.length === 0) {
     throw new Error(
-      'Could not detect candidate names in the uploaded document. Please ensure a column named "Name" or "Candidate Name" exists.'
+      'Could not detect candidate names in the uploaded document. Please ensure a column named "Candidate Name" or "Name" exists.'
     );
   }
 
@@ -150,7 +207,8 @@ export function parseCandidateWorkbook(buffer: Buffer): RawCandidateRow[] {
 }
 
 /**
- * Imports candidates, generates usernames/passwords, persists in DB,
+ * Imports candidates from an Excel/CSV roster containing Name and Mobile Number,
+ * automatically generates Login IDs and passwords (firstname@123), persists in DB,
  * and compiles the credentials CSV for the administrator.
  */
 export async function importCandidatesFromBuffer(
@@ -160,16 +218,21 @@ export async function importCandidatesFromBuffer(
 ): Promise<ImportRosterResult> {
   const rawCandidates = parseCandidateWorkbook(buffer);
 
-  // Fetch existing users to avoid username/email collisions
-  const existingUsers = await db.user.findMany({
-    select: { email: true },
+  // Fetch existing users to avoid username/email/mobile collisions
+  const existingUsers: any[] = await db.user.findMany({
+    select: { email: true, contactNumber: true } as any,
   });
-  const existingEmails = new Set(existingUsers.map((u: { email: string }) => u.email.toLowerCase()));
+  const existingEmails = new Set(existingUsers.map((u: any) => (u.email ? u.email.toLowerCase() : '')));
+  const existingContacts = new Set(
+    existingUsers
+      .map((u: any) => (u.contactNumber ? String(u.contactNumber).trim() : null))
+      .filter(Boolean) as string[]
+  );
 
   const credentials: GeneratedCandidateCredential[] = [];
   const assignedUsernames = new Set<string>();
 
-  // Helper to ensure guaranteed uniqueness
+  // Helper to ensure guaranteed uniqueness for Login ID
   const getUniqueUsername = (base: string): string => {
     let candidateUsername = base;
     let counter = 1;
@@ -195,7 +258,7 @@ export async function importCandidatesFromBuffer(
     data: {
       fileName: originalFileName,
       batchName,
-      totalCandidates: 0, // Will be updated after processing
+      totalCandidates: 0,
       createdById: createdById || null,
     } as any,
   });
@@ -206,25 +269,42 @@ export async function importCandidatesFromBuffer(
   for (const raw of rawCandidates) {
     try {
       const baseUsername = generateBaseUsername(raw.name);
-      let username = getUniqueUsername(baseUsername);
+      const username = getUniqueUsername(baseUsername);
+      const cleanMobile = raw.mobileNumber ? raw.mobileNumber.trim() : '';
 
       // Candidate email defaults to username@assessment.com or their provided email
-      let email = raw.email ? raw.email.toLowerCase() : `${username}@assessment.com`;
+      const email = raw.email ? raw.email.toLowerCase() : `${username}@assessment.com`;
 
-      // If provided email already exists, skip
+      // Check if candidate already exists by email or mobile number
       if (existingEmails.has(email)) {
         credentials.push({
           name: raw.name,
+          mobileNumber: cleanMobile || 'N/A',
           username,
           email,
           plainPassword: '(Already Exists)',
           status: 'ALREADY_EXISTS',
-          errorMessage: `An account with email/username "${email}" already exists.`,
+          errorMessage: `An account with login email "${email}" already exists.`,
         });
         totalSkipped++;
         continue;
       }
 
+      if (cleanMobile && existingContacts.has(cleanMobile)) {
+        credentials.push({
+          name: raw.name,
+          mobileNumber: cleanMobile,
+          username,
+          email,
+          plainPassword: '(Already Exists)',
+          status: 'ALREADY_EXISTS',
+          errorMessage: `A candidate with mobile number "${cleanMobile}" already exists.`,
+        });
+        totalSkipped++;
+        continue;
+      }
+
+      // Password is auto-generated as <first_name>@123
       const plainPassword = generateCandidatePassword(raw.name);
       const passwordHash = await bcrypt.hash(plainPassword, 10);
 
@@ -233,6 +313,7 @@ export async function importCandidatesFromBuffer(
         data: {
           name: raw.name,
           email,
+          contactNumber: cleanMobile || null,
           passwordHash,
           role: 'USER',
           isActive: true,
@@ -242,9 +323,13 @@ export async function importCandidatesFromBuffer(
       });
 
       existingEmails.add(email);
+      if (cleanMobile) {
+        existingContacts.add(cleanMobile);
+      }
 
       credentials.push({
         name: raw.name,
+        mobileNumber: cleanMobile || 'N/A',
         username,
         email,
         plainPassword,
@@ -254,31 +339,32 @@ export async function importCandidatesFromBuffer(
     } catch (err: any) {
       credentials.push({
         name: raw.name,
+        mobileNumber: raw.mobileNumber || 'N/A',
         username: 'error',
         email: 'error',
         plainPassword: 'N/A',
         status: 'ERROR',
-        errorMessage: err.message || 'Failed to create user record',
+        errorMessage: err.message || 'Failed to create candidate record',
       });
       totalSkipped++;
     }
   }
 
-  // Build CSV content string
+  // Build CSV content string for Admin to distribute directly to candidates
   const csvLines: string[] = [];
-  csvLines.push('Candidate Name,Username,Login Email,Temporary Password,Status,Creation Date');
+  csvLines.push('Candidate Name,Mobile Number,Login ID,Password,Status,Creation Date');
 
   const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
   for (const cred of credentials) {
     const escapedName = `"${cred.name.replace(/"/g, '""')}"`;
+    const escapedMobile = `"${cred.mobileNumber.replace(/"/g, '""')}"`;
     const escapedUsername = `"${cred.username.replace(/"/g, '""')}"`;
-    const escapedEmail = `"${cred.email.replace(/"/g, '""')}"`;
     const escapedPassword = `"${cred.plainPassword.replace(/"/g, '""')}"`;
     const escapedStatus = `"${cred.status}"`;
 
     csvLines.push(
-      `${escapedName},${escapedUsername},${escapedEmail},${escapedPassword},${escapedStatus},"${nowStr}"`
+      `${escapedName},${escapedMobile},${escapedUsername},${escapedPassword},${escapedStatus},"${nowStr}"`
     );
   }
 
@@ -302,14 +388,14 @@ export async function importCandidatesFromBuffer(
 }
 
 /**
- * Generates a clean CSV sample template for administrators.
+ * Generates a clean CSV sample template for administrators containing Candidate Name and Mobile Number.
  */
 export function generateSampleCandidateTemplate(): string {
   return [
-    'Candidate Name,Email (Optional)',
-    'John Smith,john.smith@example.com',
-    'Sarah Connor,',
-    'Michael Chang,',
-    'Emily Watson,emily.watson@university.edu',
+    'Candidate Name,Mobile Number',
+    'John Smith,9876543210',
+    'Sarah Connor,9876543211',
+    'Michael Chang,9876543212',
+    'Emily Watson,9876543213',
   ].join('\r\n');
 }

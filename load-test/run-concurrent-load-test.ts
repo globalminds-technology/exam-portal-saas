@@ -16,9 +16,10 @@ interface RequestMetrics {
   scenario: string;
 }
 
-const BASE_URL = process.env.LOAD_TEST_URL || 'http://localhost:3002';
-const CONCURRENT_USERS = parseInt(process.env.CONCURRENT_USERS || '200', 10);
-const CANDIDATE_START_OFFSET = parseInt(process.env.CANDIDATE_START_OFFSET || '200', 10);
+const BASE_URL = process.env.LOAD_TEST_URL || 'https://examination-system-saa-s-opew.vercel.app';
+const CONCURRENT_USERS = parseInt(process.env.CONCURRENT_USERS || '500', 10);
+const CANDIDATE_START_OFFSET = parseInt(process.env.CANDIDATE_START_OFFSET || '0', 10);
+const RAMP_UP_MS = parseInt(process.env.RAMP_UP_MS || '35000', 10);
 
 function calculatePercentile(values: number[], percentile: number): number {
   if (values.length === 0) return 0;
@@ -188,12 +189,22 @@ async function runLoadTest() {
     process.exit(1);
   }
 
-  console.log(`Launching ${CONCURRENT_USERS} simultaneous user workflows...`);
+  console.log(`Launching ${CONCURRENT_USERS} user workflows (ramp-up: ${(RAMP_UP_MS / 1000).toFixed(1)}s)...`);
   const overallStart = Date.now();
 
   const userPromises: Promise<RequestMetrics[]>[] = [];
+  const delayPerUser = CONCURRENT_USERS > 1 ? RAMP_UP_MS / CONCURRENT_USERS : 0;
+
   for (let i = 1; i <= CONCURRENT_USERS; i++) {
-    userPromises.push(simulateCandidateWorkflow(i));
+    const delay = (i - 1) * delayPerUser;
+    userPromises.push(
+      new Promise<RequestMetrics[]>((resolve) => {
+        setTimeout(async () => {
+          const metrics = await simulateCandidateWorkflow(i);
+          resolve(metrics);
+        }, delay);
+      })
+    );
   }
 
   const results = await Promise.all(userPromises);

@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { sendCandidateCredentialsEmail } from '@/lib/services/email.service';
+import { generateBaseUsername, generateCandidatePassword } from '@/lib/services/user-import.service';
 
 export async function getUsers(filters: {
   page?: number;
@@ -307,7 +308,7 @@ export async function deleteUsers(
 export async function createUser(
   data: {
     name: string;
-    email: string;
+    email?: string;
     contactNumber?: string | null;
     password?: string;
     role?: 'ADMIN' | 'USER';
@@ -325,15 +326,36 @@ export async function createUser(
   }
 
   const trimmedName = data.name.trim();
-  const normalizedEmail = data.email.trim().toLowerCase();
+  let normalizedEmail = data.email ? data.email.trim().toLowerCase() : '';
   const trimmedContactNumber = data.contactNumber ? data.contactNumber.trim() : null;
 
   if (!trimmedName) {
     throw new Error(targetRole === 'ADMIN' ? 'Administrator name is required.' : 'Candidate name is required.');
   }
 
+  // If candidate email was not provided, auto-generate internal Login ID email
+  if (!normalizedEmail && targetRole === 'USER') {
+    const baseUsername = generateBaseUsername(trimmedName);
+    let candidateUsername = baseUsername;
+    let counter = 1;
+    while (
+      await db.user.findFirst({
+        where: {
+          OR: [
+            { email: `${candidateUsername}@assessment.com` },
+            { email: candidateUsername },
+          ],
+        },
+      })
+    ) {
+      counter++;
+      candidateUsername = `${baseUsername}${counter}`;
+    }
+    normalizedEmail = `${candidateUsername}@assessment.com`;
+  }
+
   if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-    throw new Error('A valid email address is required.');
+    throw new Error('A valid email or Login ID is required.');
   }
 
   // Check if user already exists
@@ -343,22 +365,28 @@ export async function createUser(
   });
 
   if (existing) {
-    throw new Error(`A user with email "${normalizedEmail}" already exists in the system.`);
+    throw new Error(`A user with email/login "${normalizedEmail}" already exists in the system.`);
   }
 
-  // Determine password - automatically generated for candidate
+  // Check if candidate with same mobile number already exists
+  if (targetRole === 'USER' && trimmedContactNumber) {
+    const existingMobile = await (db.user as any).findFirst({
+      where: { contactNumber: trimmedContactNumber },
+      select: { id: true, name: true },
+    });
+    if (existingMobile) {
+      throw new Error(`A candidate with mobile number "${trimmedContactNumber}" already exists (${existingMobile.name}).`);
+    }
+  }
+
+  // Determine password - automatically generated as firstname@123 for candidate
   let plainPassword = data.password?.trim();
   if (!plainPassword) {
     if (targetRole === 'ADMIN') {
       plainPassword = 'Admin@' + Math.floor(100000 + Math.random() * 900000);
     } else {
-      // Auto-generate a secure, memorable password (Prefix + Symbol + 4 Digits)
-      const prefixes = ['Exam', 'Pass', 'Test', 'Cert', 'Grad', 'Prep'];
-      const symbols = ['@', '#', '!', '$'];
-      const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
-      const symbol = symbols[Math.floor(Math.random() * symbols.length)];
-      const digits = Math.floor(1000 + Math.random() * 9000);
-      plainPassword = `${prefix}${symbol}${digits}`;
+      // Auto-generate as <first_name_in_lowercase>@123
+      plainPassword = generateCandidatePassword(trimmedName);
     }
   }
 
@@ -418,12 +446,12 @@ export async function createUser(
     }).catch(() => {});
   }
 
-  // Send credentials and exam portal link to user's email directly
+  // Email dispatch is optional; direct credentials distribution by administrator
   let emailResult: { success: boolean; error?: string; messageId?: string; isMock?: boolean } = {
-    success: false,
-    error: 'Email dispatch skipped for administrator role.',
+    success: true,
+    isMock: true,
   };
-  if (targetRole === 'USER') {
+  if (targetRole === 'USER' && normalizedEmail && !normalizedEmail.endsWith('@assessment.com')) {
     try {
       emailResult = await sendCandidateCredentialsEmail({
         name: trimmedName,
@@ -432,8 +460,8 @@ export async function createUser(
         password: plainPassword,
       });
     } catch (err: any) {
-      console.error('Failed to send candidate credentials email:', err);
-      emailResult = { success: false, error: err.message || 'Failed to send credentials email' };
+      console.warn('Candidate email dispatch skipped/failed:', err?.message);
+      emailResult = { success: false, error: err?.message || 'Email dispatch skipped' };
     }
   }
 

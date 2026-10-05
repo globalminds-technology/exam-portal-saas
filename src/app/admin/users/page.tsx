@@ -67,6 +67,7 @@ interface UserItem {
 
 interface GeneratedCredential {
   name: string;
+  mobileNumber?: string;
   username: string;
   email: string;
   plainPassword: string;
@@ -509,12 +510,12 @@ export default function AdminUsersPage() {
       setAddStudentError('Please enter candidate name.');
       return;
     }
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setAddStudentError('Please enter a valid candidate email address.');
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setAddStudentError('Please enter a valid candidate email address or leave blank for auto-generated Login ID.');
       return;
     }
     if (!trimmedContact) {
-      setAddStudentError('Please enter candidate contact number.');
+      setAddStudentError('Please enter candidate contact/mobile number.');
       return;
     }
 
@@ -527,7 +528,7 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: trimmedName,
-          email: trimmedEmail.toLowerCase(),
+          email: trimmedEmail ? trimmedEmail.toLowerCase() : undefined,
           contactNumber: trimmedContact,
           batchId: studentBatchId || null,
         }),
@@ -557,12 +558,16 @@ export default function AdminUsersPage() {
   const handleCopyStudentCredentials = () => {
     if (!createdStudentResult) return;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const loginId = createdStudentResult.user.email.replace(/@assessment\.com$/, '');
     const text = `Candidate Login Credentials:
-Name: ${createdStudentResult.user.name}
-Email (Login ID): ${createdStudentResult.user.email}
+Candidate Name: ${createdStudentResult.user.name}
+Login ID: ${loginId}
+Mobile Number: ${createdStudentResult.user.contactNumber || 'N/A'}
 Password: ${createdStudentResult.plainPassword}
-${createdStudentResult.user.contactNumber ? `Contact Number: ${createdStudentResult.user.contactNumber}\n` : ''}Examination Portal URL: ${origin}/login
+Examination Portal URL: ${origin}/login
 
+How to Log In:
+Enter your Login ID or Mobile Number with your Password at ${origin}/login.
 Note: The examination can be taken once the Super Administrator clicks "Start Examination".`;
 
     navigator.clipboard.writeText(text);
@@ -1751,7 +1756,7 @@ Portal URL: ${origin}/login`;
                     Import Candidates & Auto-Generate Credentials
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Upload an Excel (.xlsx) or CSV roster containing candidate names
+                    Upload an Excel (.xlsx, .xls) or CSV roster containing Candidate Names and Mobile Numbers
                   </p>
                 </div>
               </div>
@@ -1771,11 +1776,12 @@ Portal URL: ${origin}/login`;
                 <div className="space-y-6">
                   {/* Explanatory guidelines banner */}
                   <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-blue-900 text-xs leading-relaxed space-y-2">
-                    <p className="font-semibold">How Candidate Ingestion Works:</p>
-                    <ul className="list-disc list-inside space-y-1 text-blue-800">
-                      <li>The platform extracts names from the <strong>Name</strong> or <strong>Candidate Name</strong> column.</li>
-                      <li>For each candidate, a clean unique <strong>Username</strong> and secure random <strong>Password</strong> are automatically created.</li>
-                      <li>Upon import, you will immediately receive a <strong>downloadable CSV file</strong> with all generated credentials to distribute to candidates.</li>
+                    <p className="font-semibold text-blue-950">How Candidate Ingestion & Credentials Work:</p>
+                    <ul className="list-disc list-inside space-y-1.5 text-blue-800">
+                      <li>The spreadsheet must include <strong>Candidate Name</strong> and <strong>Mobile Number</strong> columns.</li>
+                      <li>The system auto-generates a unique <strong>Login ID</strong> and password strictly formatted as <strong>firstname@123</strong>.</li>
+                      <li>Candidates can log in directly at the login portal with either their <strong>Login ID</strong> or <strong>Mobile Number</strong>.</li>
+                      <li>No email links needed. Download the generated credentials file below and share it directly with candidates.</li>
                     </ul>
                   </div>
 
@@ -1798,7 +1804,7 @@ Portal URL: ${origin}/login`;
                     <p className="text-xs text-slate-400 mt-1">
                       {selectedFile
                         ? `${(selectedFile.size / 1024).toFixed(1)} KB`
-                        : 'Supports Microsoft Excel (.xlsx, .xls) and CSV spreadsheets'}
+                        : 'Spreadsheet with Candidate Name & Mobile Number'}
                     </p>
                   </div>
 
@@ -1811,7 +1817,7 @@ Portal URL: ${origin}/login`;
 
                   {/* Sample Template Link */}
                   <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
-                    <span>Need a starting format?</span>
+                    <span>Need a sample format with Name & Mobile Number?</span>
                     <a
                       href="/api/admin/users/template"
                       download="candidate_roster_template.csv"
@@ -1833,7 +1839,7 @@ Portal URL: ${origin}/login`;
                         Candidate Provisioning Complete!
                       </span>
                       <span>
-                        Successfully created <strong>{importResult.totalCreated}</strong> new candidate accounts ({importResult.totalSkipped} skipped/duplicates).
+                        Successfully created <strong>{importResult.totalCreated}</strong> new candidate accounts ({importResult.totalSkipped} skipped/duplicates). Passwords generated as <strong>firstname@123</strong>.
                       </span>
                     </div>
                   </div>
@@ -1844,7 +1850,7 @@ Portal URL: ${origin}/login`;
                       Download Login Credentials File
                     </h4>
                     <p className="text-xs text-blue-100 max-w-md mx-auto">
-                      Click below to save the official credentials CSV file containing candidate usernames, emails, and temporary passwords for distribution.
+                      Save the official credentials CSV file containing candidate names, mobile numbers, Login IDs, and passwords for direct distribution.
                     </p>
                     <button
                       onClick={() => downloadCredentialsCsv(importResult.csvContent)}
@@ -1867,7 +1873,8 @@ Portal URL: ${origin}/login`;
                         <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                           <tr>
                             <th className="py-2.5 px-3">Name</th>
-                            <th className="py-2.5 px-3">Username / Login ID</th>
+                            <th className="py-2.5 px-3">Mobile Number</th>
+                            <th className="py-2.5 px-3">Login ID</th>
                             <th className="py-2.5 px-3">Password</th>
                             <th className="py-2.5 px-3">Status</th>
                           </tr>
@@ -1878,7 +1885,10 @@ Portal URL: ${origin}/login`;
                               <td className="py-2.5 px-3 font-sans font-semibold text-slate-800">
                                 {cred.name}
                               </td>
-                              <td className="py-2.5 px-3 text-blue-600">
+                              <td className="py-2.5 px-3 text-slate-600">
+                                {cred.mobileNumber || '—'}
+                              </td>
+                              <td className="py-2.5 px-3 text-blue-600 font-bold">
                                 {cred.username}
                               </td>
                               <td className="py-2.5 px-3">
@@ -2339,37 +2349,15 @@ Portal URL: ${origin}/login`;
             {/* Modal Content */}
             <div className="p-6">
               {createdStudentResult ? (
-                /* Success View: Display Created Credentials & Email Status */
+                /* Success View: Display Created Credentials directly for distribution */
                 <div className="space-y-5">
                   <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center space-x-3">
                     <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
                     <div>
-                      <h4 className="text-sm font-bold">Candidate Added to Examination Portal</h4>
+                      <h4 className="text-sm font-bold">Candidate Account Created</h4>
                       <p className="text-xs text-emerald-700 mt-0.5">
-                        Login credentials have been auto-generated by the system and sent to the candidate&apos;s email address.
+                        Credentials auto-generated as <strong>firstname@123</strong>. Ready to share directly with the candidate.
                       </p>
-                    </div>
-                  </div>
-
-                  {/* Email Dispatch Status */}
-                  <div
-                    className={`p-3.5 rounded-2xl border text-xs flex items-start space-x-3 ${
-                      createdStudentResult.emailResult?.success
-                        ? 'bg-blue-50 border-blue-200 text-blue-900'
-                        : 'bg-amber-50 border-amber-200 text-amber-900'
-                    }`}
-                  >
-                    <Mail className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold">
-                        {createdStudentResult.emailResult?.success
-                          ? 'Credentials Email Dispatched'
-                          : 'Email Notice'}
-                        :
-                      </span>{' '}
-                      {createdStudentResult.emailResult?.success
-                        ? `The login email, generated password, and examination portal link were dispatched to ${createdStudentResult.user.email}.`
-                        : `${createdStudentResult.emailResult?.error || 'Email queued or logged to console.'}`}
                     </div>
                   </div>
 
@@ -2380,16 +2368,25 @@ Portal URL: ${origin}/login`;
                     </div>
 
                     <div className="flex justify-between items-center pb-3 border-b border-slate-200">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Email (Login ID)</span>
-                      <span className="text-sm font-mono font-bold text-slate-900">{createdStudentResult.user.email}</span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Login ID</span>
+                      <span className="text-sm font-mono font-bold text-blue-700">
+                        {createdStudentResult.user.email.replace(/@assessment\.com$/, '')}
+                      </span>
                     </div>
 
                     {createdStudentResult.user.contactNumber && (
                       <div className="flex justify-between items-center pb-3 border-b border-slate-200">
-                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Contact Number</span>
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Mobile Number</span>
                         <span className="text-sm font-mono font-bold text-slate-900">{createdStudentResult.user.contactNumber}</span>
                       </div>
                     )}
+
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Password</span>
+                      <span className="text-sm font-mono font-extrabold text-emerald-700 bg-emerald-100/70 px-2.5 py-0.5 rounded-lg">
+                        {createdStudentResult.plainPassword}
+                      </span>
+                    </div>
 
                     <div className="flex justify-between items-center pb-3 border-b border-slate-200">
                       <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Assigned Batch</span>
@@ -2399,35 +2396,27 @@ Portal URL: ${origin}/login`;
                     </div>
 
                     <div className="flex justify-between items-center">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Delivery Channel</span>
-                      <span className="text-xs font-semibold text-emerald-700 flex items-center">
-                        <Mail className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                        Credentials sent strictly to candidate&apos;s email
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Login Access</span>
+                      <span className="text-xs font-semibold text-slate-700">
+                        Candidate can log in using Login ID or Mobile Number
                       </span>
                     </div>
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-3 pt-2">
                     <button
-                      onClick={() =>
-                        handleResendEmail({
-                          id: createdStudentResult.user.id,
-                          email: createdStudentResult.user.email,
-                          name: createdStudentResult.user.name,
-                        } as any)
-                      }
-                      disabled={resendingUserId === createdStudentResult.user.id}
-                      className="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/20 transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
+                      onClick={handleCopyStudentCredentials}
+                      className="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/20 transition-all flex items-center justify-center space-x-2"
                     >
-                      {resendingUserId === createdStudentResult.user.id ? (
+                      {copiedStudentCreds ? (
                         <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Resending Email...</span>
+                          <Check className="w-4 h-4 text-emerald-300" />
+                          <span>Credentials Copied to Clipboard!</span>
                         </>
                       ) : (
                         <>
-                          <Mail className="w-4 h-4" />
-                          <span>Resend Email to Candidate</span>
+                          <Copy className="w-4 h-4" />
+                          <span>Copy Candidate Credentials</span>
                         </>
                       )}
                     </button>
@@ -2442,7 +2431,7 @@ Portal URL: ${origin}/login`;
                   </div>
                 </div>
               ) : (
-                /* Form View: Input Student Details (Name, Email, Contact Number ONLY - Password Auto-Generated) */
+                /* Form View: Input Student Details (Name, Contact Number, Email Optional) */
                 <form onSubmit={handleCreateStudent} className="space-y-4">
                   {addStudentError && (
                     <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 flex items-start space-x-2.5">
@@ -2466,47 +2455,46 @@ Portal URL: ${origin}/login`;
                     />
                   </div>
 
-                  {/* Email */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Email Address (Login ID) <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="e.g. saanvi.bose@assessment.com"
-                      value={studentEmail}
-                      onChange={(e) => setStudentEmail(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      This email serves as the candidate&apos;s Login ID.
-                    </p>
-                  </div>
-
                   {/* Contact Number */}
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Contact Number <span className="text-rose-500">*</span>
+                      Mobile Number <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="tel"
                       required
-                      placeholder="e.g. +91 9876543210"
+                      placeholder="e.g. 9876543210"
                       value={studentContactNumber}
                       onChange={(e) => setStudentContactNumber(e.target.value)}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
                     />
                     <p className="text-[11px] text-slate-500 mt-1">
-                      Candidate&apos;s phone or WhatsApp contact number.
+                      Candidate can log in directly using this mobile number.
                     </p>
                   </div>
 
+                  {/* Email (Optional) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Email Address <span className="text-slate-400 font-normal">(Optional)</span>
+                      </label>
+                      <span className="text-[11px] text-slate-400">Leave blank to auto-generate Login ID</span>
+                    </div>
+                    <input
+                      type="email"
+                      placeholder="e.g. saanvi.bose@example.com (optional)"
+                      value={studentEmail}
+                      onChange={(e) => setStudentEmail(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                    />
+                  </div>
+
                   <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200/80 text-xs text-blue-900 flex items-start space-x-2.5">
-                    <Mail className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <Shield className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <div>
-                      <span className="font-bold">Automated Credentials & Email Delivery:</span>{' '}
-                      You do not need to create a password manually. The system automatically creates a secure password and emails the credentials along with the examination link directly to the candidate.
+                      <span className="font-bold">Auto-Generated Credentials:</span>{' '}
+                      Password will be automatically created strictly as <strong>firstname@123</strong> (e.g. saanvi@123). Login ID is generated from candidate&apos;s name. No manual password or email link required.
                     </div>
                   </div>
 
