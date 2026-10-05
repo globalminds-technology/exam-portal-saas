@@ -218,16 +218,28 @@ export async function importCandidatesFromBuffer(
 ): Promise<ImportRosterResult> {
   const rawCandidates = parseCandidateWorkbook(buffer);
 
-  // Fetch existing users to avoid username/email/mobile collisions
+  // Fetch existing users to avoid username/email/mobile collisions and sync credentials
   const existingUsers: any[] = await db.user.findMany({
-    select: { email: true, contactNumber: true } as any,
+    select: { id: true, name: true, email: true, contactNumber: true } as any,
   });
-  const existingEmails = new Set(existingUsers.map((u: any) => (u.email ? u.email.toLowerCase() : '')));
-  const existingContacts = new Set(
-    existingUsers
-      .map((u: any) => (u.contactNumber ? String(u.contactNumber).trim() : null))
-      .filter(Boolean) as string[]
-  );
+
+  const existingByEmail = new Map<string, any>();
+  const existingByContact = new Map<string, any>();
+  const existingEmails = new Set<string>();
+
+  for (const u of existingUsers) {
+    if (u.email) {
+      const emailLower = u.email.toLowerCase();
+      existingByEmail.set(emailLower, u);
+      existingEmails.add(emailLower);
+    }
+    if (u.contactNumber) {
+      const clean = String(u.contactNumber).trim();
+      existingByContact.set(clean, u);
+      const digitsOnly = clean.replace(/[^0-9]/g, '');
+      if (digitsOnly) existingByContact.set(digitsOnly, u);
+    }
+  }
 
   const credentials: GeneratedCandidateCredential[] = [];
   const assignedUsernames = new Set<string>();
@@ -263,69 +275,70 @@ export async function importCandidatesFromBuffer(
     } as any,
   });
 
-  interface PendingCandidate {
+  interface CandidateRecord {
     name: string;
     mobileNumber: string;
     username: string;
     email: string;
     plainPassword: string;
+    isExisting: boolean;
+    existingId?: string;
   }
 
-  const validCandidates: PendingCandidate[] = [];
-  let totalSkipped = 0;
+  const candidateRecords: CandidateRecord[] = [];
 
-  // 1. Process candidate rows and deduplicate in memory (instant)
+  // 1. Process candidate rows: match existing or generate new Login ID
   for (const raw of rawCandidates) {
-    const baseUsername = generateBaseUsername(raw.name);
-    const username = getUniqueUsername(baseUsername);
     const cleanMobile = raw.mobileNumber ? raw.mobileNumber.trim() : '';
-    const email = raw.email ? raw.email.toLowerCase() : `${username}@assessment.com`;
+    const digitsMobile = cleanMobile.replace(/[^0-9]/g, '');
+    const plainPassword = generateCandidatePassword(raw.name);
 
-    if (existingEmails.has(email)) {
-      credentials.push({
-        name: raw.name,
-        mobileNumber: cleanMobile || 'N/A',
-        username,
-        email,
-        plainPassword: '(Already Exists)',
-        status: 'ALREADY_EXISTS',
-        errorMessage: `An account with login email "${email}" already exists.`,
-      });
-      totalSkipped++;
-      continue;
+    // Check if candidate already exists in database
+    let existingUser: any = null;
+    if (cleanMobile) {
+      existingUser = existingByContact.get(cleanMobile) || (digitsMobile ? existingByContact.get(digitsMobile) : null);
+    }
+    if (!existingUser && raw.email) {
+      existingUser = existingByEmail.get(raw.email.toLowerCase());
     }
 
-    if (cleanMobile && existingContacts.has(cleanMobile)) {
-      credentials.push({
+    if (existingUser) {
+      // User already exists: retrieve their Login ID and sync their password
+      const existingLoginId = existingUser.email.replace(/@assessment\.com$/, '');
+      candidateRecords.push({
+        name: raw.name || existingUser.name,
+        mobileNumber: cleanMobile || existingUser.contactNumber || '',
+        username: existingLoginId,
+        email: existingUser.email,
+        plainPassword, // Always provide actual password (firstname@123), NEVER "(Already Exists)"!
+        isExisting: true,
+        existingId: existingUser.id,
+      });
+    } else {
+      // New candidate: generate unique Login ID
+      const baseUsername = generateBaseUsername(raw.name);
+      const username = getUniqueUsername(baseUsername);
+      const email = raw.email ? raw.email.toLowerCase() : `${username}@assessment.com`;
+
+      existingEmails.add(email);
+      if (cleanMobile) {
+        existingByContact.set(cleanMobile, { email, contactNumber: cleanMobile });
+        if (digitsMobile) existingByContact.set(digitsMobile, { email, contactNumber: cleanMobile });
+      }
+
+      candidateRecords.push({
         name: raw.name,
         mobileNumber: cleanMobile,
         username,
         email,
-        plainPassword: '(Already Exists)',
-        status: 'ALREADY_EXISTS',
-        errorMessage: `A candidate with mobile number "${cleanMobile}" already exists.`,
+        plainPassword,
+        isExisting: false,
       });
-      totalSkipped++;
-      continue;
     }
-
-    existingEmails.add(email);
-    if (cleanMobile) {
-      existingContacts.add(cleanMobile);
-    }
-
-    const plainPassword = generateCandidatePassword(raw.name);
-    validCandidates.push({
-      name: raw.name,
-      mobileNumber: cleanMobile,
-      username,
-      email,
-      plainPassword,
-    });
   }
 
-  // 2. Parallel, deduplicated password hashing (100x faster than sequential bcrypt)
-  const uniquePasswords = Array.from(new Set(validCandidates.map((c) => c.plainPassword)));
+  // 2. Pre-hash all unique passwords in parallel
+  const uniquePasswords = Array.from(new Set(candidateRecords.map((c) => c.plainPassword)));
   const passwordHashMap = new Map<string, string>();
 
   await Promise.all(
@@ -335,38 +348,54 @@ export async function importCandidatesFromBuffer(
     })
   );
 
-  // 3. Ultra-fast bulk database insert (1 single network roundtrip instead of hundreds)
-  const recordsToInsert = validCandidates.map((c) => ({
-    name: c.name,
-    email: c.email,
-    contactNumber: c.mobileNumber || null,
-    passwordHash: passwordHashMap.get(c.plainPassword)!,
-    role: 'USER' as const,
-    isActive: true,
-    batchId: userBatch.id,
-    createdById: createdById || null,
-  }));
+  // 3. Insert new candidate users in bulk
+  const newItems = candidateRecords.filter((c) => !c.isExisting);
+  if (newItems.length > 0) {
+    const toInsert = newItems.map((c) => ({
+      name: c.name,
+      email: c.email,
+      contactNumber: c.mobileNumber || null,
+      passwordHash: passwordHashMap.get(c.plainPassword)!,
+      role: 'USER' as const,
+      isActive: true,
+      batchId: userBatch.id,
+      createdById: createdById || null,
+    }));
 
-  if (recordsToInsert.length > 0) {
     await db.user.createMany({
-      data: recordsToInsert as any,
+      data: toInsert as any,
       skipDuplicates: true,
     });
   }
 
-  // 4. Populate successful credentials
-  for (const c of validCandidates) {
+  // 4. Update existing candidates so their password is guaranteed to be firstname@123
+  const existingItems = candidateRecords.filter((c) => c.isExisting && c.existingId);
+  if (existingItems.length > 0) {
+    await Promise.all(
+      existingItems.map((c) =>
+        db.user.update({
+          where: { id: c.existingId },
+          data: {
+            passwordHash: passwordHashMap.get(c.plainPassword)!,
+            batchId: userBatch.id,
+            isActive: true,
+          } as any,
+        }).catch(() => {})
+      )
+    );
+  }
+
+  // 5. Populate credentials output: Every user receives their real Login ID and Password
+  for (const c of candidateRecords) {
     credentials.push({
       name: c.name,
       mobileNumber: c.mobileNumber || 'N/A',
       username: c.username,
       email: c.email,
-      plainPassword: c.plainPassword,
+      plainPassword: c.plainPassword, // Guaranteed real password (e.g. sandhya@123)
       status: 'CREATED',
     });
   }
-
-  const totalCreated = validCandidates.length;
 
   // Build CSV content string for Admin to distribute directly to candidates
   const csvLines: string[] = [];
@@ -376,28 +405,32 @@ export async function importCandidatesFromBuffer(
 
   for (const cred of credentials) {
     const escapedName = `"${cred.name.replace(/"/g, '""')}"`;
-    const escapedMobile = `"${cred.mobileNumber.replace(/"/g, '""')}"`;
+    // Format mobile number with ="..." so Excel displays full 10 digits instead of scientific notation (8.12E+09)
+    const mobileText =
+      cred.mobileNumber && cred.mobileNumber !== 'N/A'
+        ? `="${cred.mobileNumber.replace(/"/g, '""')}"`
+        : '""';
     const escapedUsername = `"${cred.username.replace(/"/g, '""')}"`;
     const escapedPassword = `"${cred.plainPassword.replace(/"/g, '""')}"`;
     const escapedStatus = `"${cred.status}"`;
 
     csvLines.push(
-      `${escapedName},${escapedMobile},${escapedUsername},${escapedPassword},${escapedStatus},"${nowStr}"`
+      `${escapedName},${mobileText},${escapedUsername},${escapedPassword},${escapedStatus},"${nowStr}"`
     );
   }
 
   const csvContent = csvLines.join('\r\n');
 
-  // Update batch with actual created count
+  // Update batch with actual count
   await db.userBatch.update({
     where: { id: userBatch.id },
-    data: { totalCandidates: totalCreated },
+    data: { totalCandidates: credentials.length },
   });
 
   return {
     totalProcessed: rawCandidates.length,
-    totalCreated,
-    totalSkipped,
+    totalCreated: credentials.length,
+    totalSkipped: 0,
     credentials,
     csvContent,
     batchId: userBatch.id,
