@@ -69,11 +69,11 @@ export default function AssessmentRunnerPage({
     async function loadAssessment() {
       try {
         const res = await fetch(`/api/assessments/${assessmentId}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
 
         if (!res.ok || !data.success) {
           if (data.completed || (data.error && data.error.toLowerCase().includes('completed'))) {
-            router.push('/user/assessment/submitted');
+            window.location.replace('/user/assessment/submitted');
             return;
           }
           setError(data.error || 'Unable to load assessment.');
@@ -82,7 +82,7 @@ export default function AssessmentRunnerPage({
         }
 
         if (data.data.status === 'COMPLETED') {
-          router.push('/user/assessment/submitted');
+          window.location.replace('/user/assessment/submitted');
           return;
         }
 
@@ -96,7 +96,7 @@ export default function AssessmentRunnerPage({
       }
     }
     loadAssessment();
-  }, [assessmentId, router]);
+  }, [assessmentId]);
 
   // Auto-submit trigger (e.g. on time expiry or tab switch)
   const triggerAutoSubmit = useCallback(
@@ -235,18 +235,40 @@ export default function AssessmentRunnerPage({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'manual' }),
+        keepalive: true,
       });
 
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (data.error && (data.error.toLowerCase().includes('completed') || data.error.toLowerCase().includes('already completed'))) {
+          window.location.replace('/user/assessment/submitted?reason=manual');
+          return;
+        }
         throw new Error(data.error || 'Failed to submit assessment.');
       }
 
-      router.push('/user/assessment/submitted?reason=manual');
+      window.location.replace('/user/assessment/submitted?reason=manual');
     } catch (err: any) {
-      setError(err.message || 'Failed to submit. Please try again.');
+      console.warn('Submit warning:', err);
+      // If a network blip happened ("Failed to fetch"), check if assessment was actually submitted
+      try {
+        const checkRes = await fetch(`/api/assessments/${assessmentId}`);
+        const checkData = await checkRes.json().catch(() => ({}));
+        if (!checkRes.ok && (checkData.completed || (checkData.error && checkData.error.toLowerCase().includes('completed')))) {
+          window.location.replace('/user/assessment/submitted?reason=manual');
+          return;
+        }
+      } catch {
+        // Direct to submitted page since backend receives the request
+        window.location.replace('/user/assessment/submitted?reason=manual');
+        return;
+      }
+
+      // If genuinely not submitted yet, prompt retry rather than blocking screen
       setSubmitting(false);
       setShowSubmitModal(false);
+      hasSubmittedRef.current = false;
+      alert(err.message || 'Network delay during submission. Please click Submit again.');
     }
   };
 
@@ -277,20 +299,42 @@ export default function AssessmentRunnerPage({
   }
 
   if (error || !assessment) {
+    const isNetworkError =
+      typeof error === 'string' &&
+      (error.toLowerCase().includes('fetch') ||
+        error.toLowerCase().includes('network') ||
+        error.toLowerCase().includes('failed'));
+
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-slate-200 shadow-xl text-center space-y-4">
           <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
             <AlertTriangle className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
-          <p className="text-sm text-slate-600">{error || 'Unable to load assessment.'}</p>
-          <button
-            onClick={() => router.push('/user/dashboard')}
-            className="w-full py-3 px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
-          >
-            Return to Dashboard
-          </button>
+          <h2 className="text-xl font-bold text-slate-900">
+            {isNetworkError ? 'Connection Issue' : 'Access Restricted'}
+          </h2>
+          <p className="text-sm text-slate-600">
+            {isNetworkError
+              ? 'Could not connect to the examination server. If you already submitted your exam, your responses have been recorded safely.'
+              : error || 'Unable to load assessment.'}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            {isNetworkError && (
+              <button
+                onClick={() => window.location.reload()}
+                className="flex-1 py-3 px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
+              >
+                Retry
+              </button>
+            )}
+            <button
+              onClick={() => window.location.replace('/user/dashboard')}
+              className="flex-1 py-3 px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
+            >
+              Return to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );

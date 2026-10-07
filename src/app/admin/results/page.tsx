@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Loader2,
   X,
+  RefreshCw,
 } from 'lucide-react';
 import CustomDropdown, { DropdownOption } from '@/components/custom-dropdown';
 
@@ -74,6 +75,8 @@ export default function AdminResultsPage() {
   const [totalResults, setTotalResults] = useState(0);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [isAutoRefresh, setIsAutoRefresh] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Retake States
   const [resultToRetake, setResultToRetake] = useState<ResultItem | null>(null);
@@ -92,8 +95,11 @@ export default function AdminResultsPage() {
       .catch(console.error);
   }, []);
 
-  const fetchResults = useCallback(async () => {
-    setLoading(true);
+  const fetchResults = useCallback(async (isSilent = false) => {
+    if (!isSilent) {
+      setLoading(true);
+      setIsRefreshing(true);
+    }
     try {
       const params = new URLSearchParams();
       params.set('page', page.toString());
@@ -112,13 +118,27 @@ export default function AdminResultsPage() {
     } catch (err) {
       console.error('Error fetching results:', err);
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [page, search, sortBy, sortOrder, selectedBatchId]);
 
   useEffect(() => {
-    fetchResults();
+    fetchResults(false);
   }, [fetchResults]);
+
+  // Live Auto-Refresh polling every 5 seconds
+  useEffect(() => {
+    if (!isAutoRefresh) return;
+
+    const interval = setInterval(() => {
+      fetchResults(true);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [isAutoRefresh, fetchResults]);
 
   const handleExportExcel = async () => {
     if (!selectedBatchId) return;
@@ -207,16 +227,46 @@ export default function AdminResultsPage() {
           </p>
         </div>
 
-        {selectedBatchId && (
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Live Auto-Refresh indicator and toggle */}
           <button
-            onClick={handleExportExcel}
-            disabled={exporting}
-            className="inline-flex items-center px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 shadow-sm transition-all space-x-2 disabled:opacity-60 disabled:cursor-wait"
+            onClick={() => setIsAutoRefresh(!isAutoRefresh)}
+            className={`inline-flex items-center gap-2 h-10 px-3.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+              isAutoRefresh
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs'
+                : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+            }`}
+            title={isAutoRefresh ? 'Auto-refreshing results every 5s (Click to pause)' : 'Auto-refresh paused (Click to resume)'}
           >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>{exporting ? 'Generating...' : 'Download Excel Report (.xlsx)'}</span>
+            <span className="relative flex h-2 w-2">
+              {isAutoRefresh && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              )}
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${isAutoRefresh ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+            </span>
+            <span>{isAutoRefresh ? 'Live Updates (5s)' : 'Live Paused'}</span>
           </button>
-        )}
+
+          <button
+            onClick={() => fetchResults(false)}
+            disabled={isRefreshing}
+            className="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+            title="Refresh results now"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+          </button>
+
+          {selectedBatchId && (
+            <button
+              onClick={handleExportExcel}
+              disabled={exporting}
+              className="inline-flex items-center px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 shadow-sm transition-all space-x-2 disabled:opacity-60 disabled:cursor-wait"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>{exporting ? 'Generating...' : 'Download Excel Report (.xlsx)'}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Retake Success Notification */}

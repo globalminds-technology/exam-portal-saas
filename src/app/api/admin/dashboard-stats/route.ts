@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { getSessionFromCookies, hasAdminAccess } from '@/lib/auth/session';
 import { getDashboardStats } from '@/lib/services/question.service';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET() {
   try {
     const session = await getSessionFromCookies();

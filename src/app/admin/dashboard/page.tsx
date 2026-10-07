@@ -17,6 +17,7 @@ import {
   Power,
   Clock,
   ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -46,6 +47,9 @@ export default function AdminDashboardPage() {
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAutoRefresh, setIsAutoRefresh] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
   const [examControl, setExamControl] = useState<{
     isExamStarted: boolean;
@@ -58,44 +62,62 @@ export default function AdminDashboardPage() {
   const [isTogglingExam, setIsTogglingExam] = useState(false);
   const [examControlMsg, setExamControlMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  useEffect(() => {
-    async function loadStats() {
-      try {
-        const [statsRes, userRes, examRes] = await Promise.all([
-          fetch('/api/admin/dashboard-stats'),
-          fetch('/api/auth/me'),
-          fetch('/api/admin/exam-control'),
-        ]);
-
-        if (!statsRes.ok) {
-          router.push('/login');
-          return;
-        }
-
-        const data = await statsRes.json();
-        if (data.error || !Array.isArray(data.recentAssessments)) {
-          router.push('/login');
-          return;
-        }
-        setStats(data);
-
-        if (userRes.ok) {
-          const uData = await userRes.json();
-          if (uData.user) setCurrentUser(uData.user);
-        }
-
-        if (examRes.ok) {
-          const eData = await examRes.json();
-          if (eData.data) setExamControl(eData.data);
-        }
-      } catch (err) {
-        console.error('Failed to load stats:', err);
-      } finally {
-        setLoading(false);
-      }
+  const loadStats = React.useCallback(async (isSilent = false) => {
+    if (!isSilent) {
+      setIsRefreshing(true);
     }
-    loadStats();
+    try {
+      const [statsRes, userRes, examRes] = await Promise.all([
+        fetch('/api/admin/dashboard-stats'),
+        fetch('/api/auth/me'),
+        fetch('/api/admin/exam-control'),
+      ]);
+
+      if (!statsRes.ok) {
+        if (!isSilent) router.push('/login');
+        return;
+      }
+
+      const data = await statsRes.json();
+      if (data.error || !Array.isArray(data.recentAssessments)) {
+        if (!isSilent) router.push('/login');
+        return;
+      }
+      setStats(data);
+      setLastUpdated(new Date());
+
+      if (userRes.ok) {
+        const uData = await userRes.json();
+        if (uData.user) setCurrentUser(uData.user);
+      }
+
+      if (examRes.ok) {
+        const eData = await examRes.json();
+        if (eData.data) setExamControl(eData.data);
+      }
+    } catch (err) {
+      console.error('Failed to load stats:', err);
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
   }, [router]);
+
+  // Initial load
+  useEffect(() => {
+    loadStats(false);
+  }, [loadStats]);
+
+  // Auto-refresh interval (every 4 seconds for live monitoring)
+  useEffect(() => {
+    if (!isAutoRefresh) return;
+
+    const interval = setInterval(() => {
+      loadStats(true);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [isAutoRefresh, loadStats]);
 
   const handleToggleExam = async (shouldStart: boolean) => {
     const actionWord = shouldStart ? 'START' : 'STOP';
@@ -165,6 +187,34 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          {/* Live Auto-Refresh Switch & Manual Refresh Button */}
+          <button
+            onClick={() => setIsAutoRefresh(!isAutoRefresh)}
+            className={`inline-flex items-center gap-2 h-10 px-3.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+              isAutoRefresh
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs'
+                : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+            }`}
+            title={isAutoRefresh ? 'Auto-refreshing every 4 seconds (Click to pause)' : 'Auto-refresh paused (Click to resume)'}
+          >
+            <span className="relative flex h-2 w-2">
+              {isAutoRefresh && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              )}
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${isAutoRefresh ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+            </span>
+            <span>{isAutoRefresh ? 'Live Updates (4s)' : 'Live Paused'}</span>
+          </button>
+
+          <button
+            onClick={() => loadStats(false)}
+            disabled={isRefreshing}
+            className="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+            title="Refresh now"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+          </button>
+
           <Link
             href="/admin/questions/import"
             className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm transition-all space-x-2 whitespace-nowrap cursor-pointer active:scale-95 shrink-0"
@@ -334,7 +384,7 @@ export default function AdminDashboardPage() {
             <TrendingUp className="w-4 h-4 text-indigo-600" />
           </div>
           <div className="text-2xl font-extrabold text-indigo-700">
-            {stats.avgScore} <span className="text-xs font-normal text-slate-400">/ 50</span>
+            {stats.avgScore} <span className="text-xs font-normal text-slate-400">/ {(stats.recentAssessments?.[0] as any)?.totalQuestions || 30}</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1">{stats.avgPercentage}% overall</div>
         </div>
@@ -392,7 +442,7 @@ export default function AdminDashboardPage() {
                         </span>
                       </td>
                       <td className="py-3.5 font-bold text-slate-900">
-                        {a.status === 'COMPLETED' ? `${a.score}/50` : '-'}
+                        {a.status === 'COMPLETED' ? `${a.score}/${(a as any).totalQuestions || 30}` : '-'}
                       </td>
                       <td className="py-3.5 font-semibold text-slate-700">
                         {a.status === 'COMPLETED' ? `${a.percentage.toFixed(1)}%` : '-'}
