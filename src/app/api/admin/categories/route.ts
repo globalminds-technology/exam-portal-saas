@@ -40,9 +40,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const adminId = searchParams.get('adminId') || undefined;
 
-    // Regular ADMIN can ONLY see categories created by them
-    // SUPER_ADMIN can see all, or filter by specific adminId
-    const createdById = session.role === 'ADMIN' ? session.userId : (adminId || undefined);
+    // Filter by specific adminId if provided in query, otherwise return all exam categories
+    const createdById = adminId || undefined;
 
     const [categories, admins] = await Promise.all([
       getCategories(createdById),
@@ -101,23 +100,6 @@ export async function PUT(request: NextRequest) {
     }
 
     if (result.data.quantities && result.data.quantities.length > 0) {
-      // If admin, verify ownership of all categories
-      if (session.role === 'ADMIN') {
-        const catIds = result.data.quantities.map((q) => q.id);
-        const nonOwned = await db.category.count({
-          where: {
-            id: { in: catIds },
-            createdById: { not: session.userId },
-          } as any,
-        });
-        if (nonOwned > 0) {
-          return NextResponse.json(
-            { error: 'Forbidden: You can only update quantities for your own categories.' },
-            { status: 403 }
-          );
-        }
-      }
-
       await updateCategoryQuantities(result.data.quantities);
       return NextResponse.json({ success: true, message: 'Category quantities updated successfully.' });
     }

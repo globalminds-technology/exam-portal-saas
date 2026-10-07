@@ -25,36 +25,16 @@ export async function GET() {
       },
     });
 
-    // Check candidate user's creator admin to serve their configured questions
-    const candidateUser: any = await db.user.findUnique({
-      where: { id: session.userId },
-      select: { createdById: true } as any,
+    // Load all categories configured for the examination (questionQuantity > 0)
+    const configuredCategories = await db.category.findMany({
+      where: { questionQuantity: { gt: 0 } },
+      select: {
+        id: true,
+        name: true,
+        questionQuantity: true,
+      },
+      orderBy: { name: 'asc' },
     });
-    const adminCreatorId = candidateUser?.createdById;
-
-    let configuredCategories = adminCreatorId
-      ? await db.category.findMany({
-          where: { questionQuantity: { gt: 0 }, createdById: adminCreatorId } as any,
-          select: {
-            id: true,
-            name: true,
-            questionQuantity: true,
-          },
-          orderBy: { name: 'asc' },
-        })
-      : [];
-
-    if (configuredCategories.length === 0) {
-      configuredCategories = await db.category.findMany({
-        where: { questionQuantity: { gt: 0 } },
-        select: {
-          id: true,
-          name: true,
-          questionQuantity: true,
-        },
-        orderBy: { name: 'asc' },
-      });
-    }
 
     const totalConfiguredQuestions = configuredCategories.reduce(
       (acc, c) => acc + c.questionQuantity,

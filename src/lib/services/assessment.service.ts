@@ -126,37 +126,17 @@ export async function startOrResumeAssessment(userId: string): Promise<Assessmen
     };
   }
 
-  // 2. No assessment exists: Check candidate's creator admin to serve their configured questions
-  const candidateUser: any = await db.user.findUnique({
-    where: { id: userId },
-    select: { createdById: true } as any,
-  });
-  const adminCreatorId = candidateUser?.createdById;
-
-  let configuredCategories = adminCreatorId
-    ? await db.category.findMany({
-        where: { questionQuantity: { gt: 0 }, createdById: adminCreatorId } as any,
-        include: {
-          questions: {
-            where: { isActive: true, createdById: adminCreatorId } as any,
-            select: { id: true },
-          },
-        },
-      })
-    : [];
-
-  // Fallback: If candidate creator admin hasn't configured categories or candidate has no creator
-  if (configuredCategories.length === 0) {
-    configuredCategories = await db.category.findMany({
-      where: { questionQuantity: { gt: 0 } },
-      include: {
-        questions: {
-          where: { isActive: true },
-          select: { id: true },
-        },
+  // 2. No assessment exists: Fetch configured categories and their active questions for the assessment
+  const configuredCategories = await db.category.findMany({
+    where: { questionQuantity: { gt: 0 } },
+    include: {
+      questions: {
+        where: { isActive: true },
+        select: { id: true },
       },
-    });
-  }
+    },
+    orderBy: { name: 'asc' },
+  });
 
   let selectedQuestionIds: string[] = [];
 
