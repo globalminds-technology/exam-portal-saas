@@ -405,10 +405,10 @@ export async function importCandidatesFromBuffer(
 
   for (const cred of credentials) {
     const escapedName = `"${cred.name.replace(/"/g, '""')}"`;
-    // Format mobile number with ="..." so Excel displays full 10 digits instead of scientific notation (8.12E+09)
+    // Standard RFC 4180 quoted string for mobile numbers
     const mobileText =
       cred.mobileNumber && cred.mobileNumber !== 'N/A'
-        ? `="${cred.mobileNumber.replace(/"/g, '""')}"`
+        ? `"${cred.mobileNumber.replace(/"/g, '""')}"`
         : '""';
     const escapedUsername = `"${cred.username.replace(/"/g, '""')}"`;
     const escapedPassword = `"${cred.plainPassword.replace(/"/g, '""')}"`;
