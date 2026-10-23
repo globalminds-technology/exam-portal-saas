@@ -56,6 +56,7 @@ model User {
   createdBatches    ImportBatch[]  @relation("CreatedBatches")
   assessments       Assessment[]
   startedExams      ExamControl[]  @relation("ExamStartedBy")
+  marketplaceSubscriptions MarketplaceSubscription[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -195,3 +196,60 @@ model ExamControl {
   startedBy      User?     @relation("ExamStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
   updatedAt      DateTime  @updatedAt
 }
+
+enum MarketplaceSubscriptionStatus {
+  PendingFulfillmentStart
+  Subscribed
+  Suspended
+  Unsubscribed
+}
+
+model MarketplaceSubscription {
+  id                   String                        @id @default(cuid())
+  subscriptionId       String                        @unique
+  subscriptionName     String
+  offerId              String
+  planId               String
+  quantity             Int                           @default(1)
+  status               MarketplaceSubscriptionStatus @default(PendingFulfillmentStart)
+  termUnit             String?
+  startDate            DateTime?
+  endDate              DateTime?
+  beneficiaryTenantId  String?
+  beneficiaryEmail     String?
+  purchaserTenantId    String?
+  purchaserEmail       String?
+  purchaserObjectId    String?
+
+  userId               String
+  user                 User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  activatedAt          DateTime?
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+
+  operations           MarketplaceOperation[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([beneficiaryTenantId])
+}
+
+model MarketplaceOperation {
+  id              String                  @id
+  subscriptionId  String
+  subscription    MarketplaceSubscription @relation(fields: [subscriptionId], references: [subscriptionId], onDelete: Cascade)
+  action          String
+  status          String
+  planId          String?
+  quantity        Int?
+  processed       Boolean                 @default(false)
+  processedAt     DateTime?
+  error           String?
+  rawPayload      String?                 @db.Text
+  createdAt       DateTime                @default(now())
+
+  @@index([subscriptionId])
+  @@index([processed])
+}
+
