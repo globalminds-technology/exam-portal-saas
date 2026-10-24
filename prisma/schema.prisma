@@ -57,6 +57,7 @@ model User {
   assessments       Assessment[]
   startedExams      ExamControl[]  @relation("ExamStartedBy")
   marketplaceSubscriptions MarketplaceSubscription[]
+  awsMarketplaceSubscriptions AwsMarketplaceSubscription[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -251,5 +252,65 @@ model MarketplaceOperation {
 
   @@index([subscriptionId])
   @@index([processed])
+}
+
+enum AwsSubscriptionStatus {
+  PENDING_REGISTRATION
+  PENDING_EVENT
+  SUBSCRIBED
+  SUSPENDED
+  UNSUBSCRIBED
+}
+
+model AwsMarketplaceSubscription {
+  id                  String                @id @default(cuid())
+  licenseArn          String?               @unique // Primary license identifier for AWS Marketplace
+  agreementId         String?                       // Purchase agreement ID
+  customerAccountId   String?                      // 12-digit AWS Account ID
+  productCode         String                       // AWS Marketplace Product Code
+  customerIdentifier  String?               @unique // Legacy identifier (optional for new sellers)
+  dimension           String?                      // Pricing tier/dimension (e.g. 'tier-500-seats')
+  quantity            Int                   @default(1)
+  status              AwsSubscriptionStatus @default(PENDING_REGISTRATION)
+  expirationDate      DateTime?
+
+  userId              String
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  activatedAt         DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  events              AwsMarketplaceEvent[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([licenseArn])
+  @@index([customerAccountId])
+  @@index([customerIdentifier])
+}
+
+model AwsMarketplaceEvent {
+  id                 String                      @id // EventBridge event ID or SQS MessageId
+  licenseArn         String?
+  agreementId        String?
+  customerAccountId  String?
+  customerIdentifier String?
+  subscriptionId     String?
+  subscription       AwsMarketplaceSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  source             String?                     // e.g. aws.agreement-marketplace
+  detailType         String?                     // e.g. License Updated - Manufacturer
+  action             String                      // Action or event name
+  status             String
+  rawPayload         String?                     @db.Text
+  processed          Boolean                     @default(false)
+  processedAt        DateTime?
+  error              String?
+  createdAt          DateTime                    @default(now())
+
+  @@index([licenseArn])
+  @@index([subscriptionId])
+  @@index([processed])
+  @@index([detailType])
 }
 

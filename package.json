@@ -8,12 +8,16 @@
     "start": "next start -p 3002",
     "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
-    "test:marketplace": "tsx test/verify-marketplace.ts"
+    "test:marketplace": "tsx test/verify-marketplace.ts",
+    "test:marketplace:aws": "tsx test/verify-aws-marketplace.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-marketplace-entitlement-service": "^3.758.0",
+    "@aws-sdk/client-marketplace-metering": "^3.758.0",
+    "@aws-sdk/client-sqs": "^3.1156.0",
     "@prisma/client": "^6.4.1",
     "bcryptjs": "^3.0.2",
     "canvas-confetti": "^1.9.4",
@@ -26,6 +30,7 @@
     "pdf-parse": "^1.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "sns-validator": "^0.3.5",
     "tailwind-merge": "^3.0.2",
     "xlsx": "^0.18.5",
     "zod": "^3.24.2"
@@ -38,6 +43,7 @@
     "@types/pdf-parse": "^1.1.4",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "@types/sns-validator": "^0.3.3",
     "autoprefixer": "^10.6.1",
     "docx": "^9.7.1",
     "pdf-lib": "^1.17.1",
