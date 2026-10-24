@@ -57,6 +57,7 @@ model User {
   assessments       Assessment[]
   startedExams      ExamControl[]  @relation("ExamStartedBy")
   marketplaceSubscriptions MarketplaceSubscription[]
+  awsMarketplaceSubscriptions AwsMarketplaceSubscription[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -250,6 +251,53 @@ model MarketplaceOperation {
   createdAt       DateTime                @default(now())
 
   @@index([subscriptionId])
+  @@index([processed])
+}
+
+enum AwsSubscriptionStatus {
+  PENDING_REGISTRATION
+  SUBSCRIBED
+  SUSPENDED
+  UNSUBSCRIBED
+}
+
+model AwsMarketplaceSubscription {
+  id                  String                @id @default(cuid())
+  customerIdentifier  String                @unique // AWS Buyer Identifier (e.g. X12345EXAMPLE)
+  customerAccountId   String?                      // 12-digit AWS Account ID
+  productCode         String                       // AWS Marketplace Product Code
+  dimension           String?                      // Pricing tier/dimension (e.g. 'tier-500-seats')
+  quantity            Int                   @default(1)
+  status              AwsSubscriptionStatus @default(PENDING_REGISTRATION)
+  expirationDate      DateTime?
+
+  userId              String
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  activatedAt         DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  events              AwsMarketplaceEvent[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([customerIdentifier])
+}
+
+model AwsMarketplaceEvent {
+  id                 String                     @id // Stores SNS MessageId for idempotency
+  customerIdentifier String
+  subscription       AwsMarketplaceSubscription @relation(fields: [customerIdentifier], references: [customerIdentifier], onDelete: Cascade)
+  action             String
+  status             String
+  rawPayload         String?                    @db.Text
+  processed          Boolean                    @default(false)
+  processedAt        DateTime?
+  error              String?
+  createdAt          DateTime                   @default(now())
+
+  @@index([customerIdentifier])
   @@index([processed])
 }
 
