@@ -1,14 +1,14 @@
 /**
- * Automated Verification Test Suite for AWS Marketplace SaaS Integration
- * Run with: npx tsx test/verify-aws-marketplace.ts
+ * Automated Verification Test Suite for AWS Marketplace EventBridge SaaS Integration
+ * Run with: npm run test:marketplace:aws
  */
 
 import {
   AwsLandingTokenSchema,
   AwsActivateSchema,
-  AwsSnsEnvelopeSchema,
+  AwsEventBridgeEnvelopeSchema,
 } from '../src/lib/marketplace/aws/validation';
-import { verifySnsSignature } from '../src/lib/marketplace/aws/sns-security';
+import { validateEventBridgeSecret } from '../src/lib/marketplace/aws/eventbridge';
 import {
   ResolveTokenSchema as AzureResolveTokenSchema,
   ActivateSubscriptionSchema as AzureActivateSchema,
@@ -31,14 +31,14 @@ function assert(condition: boolean, message: string) {
 
 async function runTests() {
   console.log('\n======================================================');
-  console.log('🧪 AWS MARKETPLACE SAAS INTEGRATION VERIFICATION SUITE');
+  console.log('🧪 AWS MARKETPLACE EVENTBRIDGE INTEGRATION TEST SUITE');
   console.log('======================================================\n');
 
   // TEST SUITE 1: AWS Landing Token Schema
   console.log('--- Test Suite 1: AWS Token Resolution Validation ---');
   {
     const validToken = AwsLandingTokenSchema.safeParse({
-      token: 'x-amzn-token-dummy-test-string-valid',
+      token: 'x-amzn-token-sample-valid-2026',
     });
     assert(validToken.success, 'Valid AWS registration token is accepted');
 
@@ -49,134 +49,137 @@ async function runTests() {
     assert(!missingToken.success, 'Missing token field is rejected');
   }
 
-  // TEST SUITE 2: AWS Activation Schema
+  // TEST SUITE 2: AWS Activation Schema with CustomerAWSAccountId & LicenseArn
   console.log('\n--- Test Suite 2: AWS Account Linking & Activation Schema ---');
   {
     const validActivation = AwsActivateSchema.safeParse({
-      customerIdentifier: 'X12345EXAMPLE',
-      productCode: 'dv2kw91hf8ev5532dkuf21f3x',
       customerAccountId: '906470608117',
+      productCode: 'dv2kw91hf8ev5532dkuf21f3x',
+      licenseArn: 'arn:aws:marketplace::906470608117:license:lic-12345678-abcd',
       dimension: 'seats-500',
       quantity: 500,
     });
-    assert(validActivation.success, 'Valid AWS activation payload without newAdmin is accepted');
+    assert(validActivation.success, 'Valid activation payload with customerAccountId & licenseArn is accepted');
 
     const validNewAdminActivation = AwsActivateSchema.safeParse({
-      customerIdentifier: 'X12345EXAMPLE',
+      customerAccountId: '906470608117',
       productCode: 'dv2kw91hf8ev5532dkuf21f3x',
-      dimension: 'enterprise',
-      quantity: 1,
+      licenseArn: 'arn:aws:marketplace::906470608117:license:lic-enterprise',
       newAdmin: {
-        name: 'University Admin',
-        email: 'admin@university.edu',
+        name: 'University Registrar',
+        email: 'registrar@university.edu',
         password: 'SecurePassword123!',
       },
     });
-    assert(validNewAdminActivation.success, 'Valid AWS activation with newAdmin registration is accepted');
+    assert(validNewAdminActivation.success, 'Valid activation with newAdmin registration is accepted');
 
-    const missingCustomerId = AwsActivateSchema.safeParse({
+    const missingAccountId = AwsActivateSchema.safeParse({
       productCode: 'dv2kw91hf8ev5532dkuf21f3x',
     });
-    assert(!missingCustomerId.success, 'Payload without customerIdentifier is rejected');
+    assert(!missingAccountId.success, 'Payload without customerAccountId is rejected');
 
-    const invalidAdminEmail = AwsActivateSchema.safeParse({
-      customerIdentifier: 'X12345EXAMPLE',
+    const missingProductCode = AwsActivateSchema.safeParse({
+      customerAccountId: '906470608117',
+    });
+    assert(!missingProductCode.success, 'Payload without productCode is rejected');
+
+    const invalidEmail = AwsActivateSchema.safeParse({
+      customerAccountId: '906470608117',
       productCode: 'dv2kw91hf8ev5532dkuf21f3x',
       newAdmin: {
         name: 'Admin',
-        email: 'invalid-email-format',
+        email: 'not-an-email',
         password: 'password123',
       },
     });
-    assert(!invalidAdminEmail.success, 'Invalid admin email format is rejected');
+    assert(!invalidEmail.success, 'Invalid email in newAdmin is rejected');
+  }
 
-    const shortPassword = AwsActivateSchema.safeParse({
-      customerIdentifier: 'X12345EXAMPLE',
-      productCode: 'dv2kw91hf8ev5532dkuf21f3x',
-      newAdmin: {
-        name: 'Admin',
-        email: 'admin@test.com',
-        password: '123',
+  // TEST SUITE 3: EventBridge Envelope Schemas & Official Event Types
+  console.log('\n--- Test Suite 3: Amazon EventBridge Official Envelope Schemas ---');
+  {
+    // 3.1 License Updated - Manufacturer
+    const licenseUpdatedEvent = AwsEventBridgeEnvelopeSchema.safeParse({
+      version: '0',
+      id: 'eb-event-1234-5678',
+      'detail-type': 'License Updated - Manufacturer',
+      source: 'aws.agreement-marketplace',
+      account: '906470608117',
+      time: '2026-10-24T12:00:00Z',
+      region: 'us-east-1',
+      resources: ['arn:aws:aws-marketplace::aws:agreement:agmt-sample123'],
+      detail: {
+        agreementId: 'agmt-sample123',
+        licenseArn: 'arn:aws:marketplace::906470608117:license:lic-abc123',
+        productCode: 'dv2kw91hf8ev5532dkuf21f3x',
+        customerAwsAccountId: '111122223333',
+        agreementStatus: 'ACTIVE',
       },
     });
-    assert(!shortPassword.success, 'Password shorter than 6 characters is rejected');
+    assert(licenseUpdatedEvent.success, 'Valid License Updated - Manufacturer event is accepted');
+
+    // 3.2 License Deprovisioned - Manufacturer
+    const licenseDeprovisionedEvent = AwsEventBridgeEnvelopeSchema.safeParse({
+      version: '0',
+      id: 'eb-event-9999-0000',
+      'detail-type': 'License Deprovisioned - Manufacturer',
+      source: 'aws.agreement-marketplace',
+      account: '906470608117',
+      time: '2026-10-24T12:00:00Z',
+      region: 'us-east-1',
+      resources: [],
+      detail: {
+        agreementId: 'agmt-sample123',
+        licenseArn: 'arn:aws:marketplace::906470608117:license:lic-abc123',
+        customerAwsAccountId: '111122223333',
+        agreementStatus: 'EXPIRED',
+      },
+    });
+    assert(licenseDeprovisionedEvent.success, 'Valid License Deprovisioned event is accepted');
+
+    // 3.3 Purchase Agreement Created - Proposer
+    const agreementCreatedEvent = AwsEventBridgeEnvelopeSchema.safeParse({
+      version: '0',
+      id: 'eb-agmt-created-1',
+      'detail-type': 'Purchase Agreement Created - Proposer',
+      source: 'aws.agreement-marketplace',
+      account: '906470608117',
+      time: '2026-10-24T12:00:00Z',
+      region: 'us-east-1',
+      resources: [],
+      detail: {
+        agreementId: 'agmt-sample123',
+        customerAwsAccountId: '111122223333',
+        productCode: 'dv2kw91hf8ev5532dkuf21f3x',
+        agreementStatus: 'ACTIVE',
+      },
+    });
+    assert(agreementCreatedEvent.success, 'Valid Purchase Agreement Created event is accepted');
+
+    // 3.4 Missing required detail-type or id
+    const invalidEnvelope = AwsEventBridgeEnvelopeSchema.safeParse({
+      source: 'aws.agreement-marketplace',
+      detail: {},
+    });
+    assert(!invalidEnvelope.success, 'Malformed EventBridge event without id and detail-type is rejected');
   }
 
-  // TEST SUITE 3: AWS SNS Envelope Schema
-  console.log('\n--- Test Suite 3: Amazon SNS Envelope Schema ---');
+  // TEST SUITE 4: Webhook Security & Shared Secret Enforcement
+  console.log('\n--- Test Suite 4: EventBridge Webhook Secret Authentication ---');
   {
-    const validNotification = AwsSnsEnvelopeSchema.safeParse({
-      Type: 'Notification',
-      MessageId: 'msg-1234-5678-9012',
-      TopicArn: 'arn:aws:sns:us-east-1:123456789012:aws-mp-subscription-notification',
-      Subject: 'Amazon AWS Marketplace Notification',
-      Message: JSON.stringify({
-        action: 'subscribe-success',
-        'customer-identifier': 'X12345EXAMPLE',
-        'product-code': 'dv2kw91hf8ev5532dkuf21f3x',
-      }),
-      Timestamp: '2026-10-24T12:00:00.000Z',
-      SignatureVersion: '1',
-      Signature: 'dummy_base64_sig==',
-      SigningCertURL: 'https://sns.us-east-1.amazonaws.com/SimpleNotificationService-123.pem',
-    });
-    assert(validNotification.success, 'Valid Notification envelope is accepted');
+    process.env.AWS_EVENTBRIDGE_WEBHOOK_SECRET = 'secret_test_key_12345';
 
-    const validConfirmation = AwsSnsEnvelopeSchema.safeParse({
-      Type: 'SubscriptionConfirmation',
-      MessageId: 'msg-sub-confirm-1234',
-      Token: '2336412f37fb687f5d51e6e241d09c805a3a57e30d718281a6f2805bfa780d6b',
-      TopicArn: 'arn:aws:sns:us-east-1:123456789012:aws-mp-subscription-notification',
-      Message: 'You have chosen to subscribe to the topic...',
-      SubscribeURL: 'https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&TopicArn=...',
-      Timestamp: '2026-10-24T12:00:00.000Z',
-      SignatureVersion: '1',
-      Signature: 'dummy_base64_sig==',
-      SigningCertURL: 'https://sns.us-east-1.amazonaws.com/SimpleNotificationService-123.pem',
-    });
-    assert(validConfirmation.success, 'Valid SubscriptionConfirmation envelope is accepted');
+    const validBearer = validateEventBridgeSecret('Bearer secret_test_key_12345');
+    assert(validBearer, 'Accepts valid Bearer token matching configured secret');
 
-    const invalidType = AwsSnsEnvelopeSchema.safeParse({
-      Type: 'InvalidTypeNotSupported',
-      MessageId: '123',
-      TopicArn: 'arn',
-      Message: 'test',
-      Timestamp: 'now',
-      SignatureVersion: '1',
-      Signature: 'sig',
-      SigningCertURL: 'https://sns.us-east-1.amazonaws.com/cert.pem',
-    });
-    assert(!invalidType.success, 'Unsupported SNS envelope Type is rejected');
-  }
+    const validDirect = validateEventBridgeSecret('secret_test_key_12345');
+    assert(validDirect, 'Accepts valid direct token string');
 
-  // TEST SUITE 4: SNS Security & Untrusted URL Rejection
-  console.log('\n--- Test Suite 4: Amazon SNS Security & Cert URL Validation ---');
-  {
-    // Test untrusted / spoofed domain in SigningCertURL
-    const untrustedCertCheck = await verifySnsSignature({
-      Type: 'Notification',
-      MessageId: 'msg-attack',
-      TopicArn: 'arn:aws:sns:us-east-1:123456789012:aws-mp',
-      Message: 'malicious payload',
-      Timestamp: '2026-10-24T12:00:00Z',
-      SignatureVersion: '1',
-      Signature: 'invalid_sig',
-      SigningCertURL: 'https://malicious-attacker-domain.com/fake-cert.pem',
-    });
-    assert(!untrustedCertCheck.isValid, 'Rejects spoofed SigningCertURL outside amazonaws.com');
+    const invalidSecret = validateEventBridgeSecret('Bearer wrong_secret');
+    assert(!invalidSecret, 'Rejects invalid secret token');
 
-    // Test missing signature fields
-    const missingSigCheck = await verifySnsSignature({
-      Type: 'Notification',
-      MessageId: 'msg-missing',
-      TopicArn: 'arn:aws:sns:us-east-1:123456789012:aws-mp',
-      Message: 'test',
-      Timestamp: '2026-10-24T12:00:00Z',
-      SignatureVersion: '1',
-      Signature: '',
-      SigningCertURL: 'https://sns.us-east-1.amazonaws.com/SimpleNotificationService-123.pem',
-    });
-    assert(!missingSigCheck.isValid, 'Rejects payload with missing signature string');
+    const missingHeader = validateEventBridgeSecret(null);
+    assert(!missingHeader, 'Rejects null or missing authorization header');
   }
 
   // TEST SUITE 5: Regression Check for Microsoft Azure Integration

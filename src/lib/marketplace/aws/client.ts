@@ -1,6 +1,7 @@
 /**
- * AWS Marketplace Metering & Entitlement API Client
- * Reference: https://docs.aws.amazon.com/marketplace/latest/userguide/saas-integration.html
+ * AWS Marketplace Metering, Entitlement & SQS Client
+ * Reference: https://docs.aws.amazon.com/marketplace/latest/userguide/saas-eventbridge-integration.html
+ * Reference: https://docs.aws.amazon.com/marketplace/latest/userguide/saas-product-customer-setup.html
  */
 
 import {
@@ -11,6 +12,11 @@ import {
   MarketplaceEntitlementServiceClient,
   GetEntitlementsCommand,
 } from '@aws-sdk/client-marketplace-entitlement-service';
+import {
+  SQSClient,
+  ReceiveMessageCommand,
+  DeleteMessageCommand,
+} from '@aws-sdk/client-sqs';
 import type { AwsResolveCustomerResponse, AwsEntitlementItem } from './types';
 
 function getAwsCredentials() {
@@ -36,9 +42,16 @@ function getAwsCredentials() {
   };
 }
 
+export interface GetEntitlementOptions {
+  licenseArn?: string;
+  customerIdentifier?: string;
+  productCode?: string;
+}
+
 class AwsMarketplaceClient {
   private meteringClient: MarketplaceMeteringClient | null = null;
   private entitlementClient: MarketplaceEntitlementServiceClient | null = null;
+  private sqsClient: SQSClient | null = null;
 
   private getMeteringClient(): MarketplaceMeteringClient {
     if (!this.meteringClient) {
@@ -56,8 +69,17 @@ class AwsMarketplaceClient {
     return this.entitlementClient;
   }
 
+  public getSqsClient(): SQSClient {
+    if (!this.sqsClient) {
+      const config = getAwsCredentials();
+      this.sqsClient = new SQSClient(config);
+    }
+    return this.sqsClient;
+  }
+
   /**
-   * Resolves the registration token passed by AWS when the buyer clicks 'Set Up Your Account'
+   * Resolves the registration token passed by AWS Marketplace when the buyer clicks 'Set Up Your Account'
+   * For integrations created after July 15, 2026, AWS returns CustomerAWSAccountId and LicenseArn.
    */
   async resolveCustomer(registrationToken: string): Promise<AwsResolveCustomerResponse> {
     try {
@@ -68,14 +90,22 @@ class AwsMarketplaceClient {
 
       const response = await client.send(command);
 
-      if (!response.CustomerIdentifier || !response.ProductCode) {
-        throw new Error('AWS ResolveCustomer returned incomplete customer data');
+      // Support both modern (CustomerAWSAccountId / LicenseArn) and legacy (CustomerIdentifier)
+      const raw = response as unknown as Record<string, unknown>;
+      const customerAccountId = (raw.CustomerAWSAccountId || raw.customerAWSAccountId || '') as string;
+      const licenseArn = (raw.LicenseArn || raw.licenseArn) as string | undefined;
+      const customerIdentifier = response.CustomerIdentifier;
+      const productCode = response.ProductCode;
+
+      if (!productCode || (!customerAccountId && !customerIdentifier)) {
+        throw new Error('AWS ResolveCustomer returned incomplete customer account identifiers');
       }
 
       return {
-        customerIdentifier: response.CustomerIdentifier,
-        productCode: response.ProductCode,
-        customerAWSAccountId: (response as { CustomerAWSAccountId?: string }).CustomerAWSAccountId,
+        customerAccountId: customerAccountId || customerIdentifier || 'unknown',
+        productCode,
+        licenseArn,
+        customerIdentifier,
       };
     } catch (error: unknown) {
       console.error('AWS ResolveCustomer API error:', error);
@@ -85,13 +115,10 @@ class AwsMarketplaceClient {
   }
 
   /**
-   * Retrieves active entitlements for the customer
+   * Retrieves active entitlements for the customer using LicenseArn (recommended) or CustomerIdentifier
    */
-  async getEntitlements(
-    customerIdentifier: string,
-    productCode?: string
-  ): Promise<AwsEntitlementItem[]> {
-    const code = productCode || process.env.AWS_MARKETPLACE_PRODUCT_CODE;
+  async getEntitlements(options: GetEntitlementOptions): Promise<AwsEntitlementItem[]> {
+    const code = options.productCode || process.env.AWS_MARKETPLACE_PRODUCT_CODE;
     if (!code) {
       console.warn('AWS_MARKETPLACE_PRODUCT_CODE is not configured; skipping entitlement lookup.');
       return [];
@@ -99,11 +126,19 @@ class AwsMarketplaceClient {
 
     try {
       const client = this.getEntitlementClient();
+      const filter: Record<string, string[]> = {};
+
+      if (options.licenseArn) {
+        // Query using LicenseArn (post-July 15, 2026 specification)
+        filter.LICENSE_ARN = [options.licenseArn];
+      } else if (options.customerIdentifier) {
+        // Legacy query using CustomerIdentifier
+        filter.CUSTOMER_IDENTIFIER = [options.customerIdentifier];
+      }
+
       const command = new GetEntitlementsCommand({
         ProductCode: code,
-        Filter: {
-          CUSTOMER_IDENTIFIER: [customerIdentifier],
-        },
+        Filter: Object.keys(filter).length > 0 ? filter : undefined,
       });
 
       const response = await client.send(command);
@@ -119,9 +154,33 @@ class AwsMarketplaceClient {
       }));
     } catch (error: unknown) {
       console.error('AWS GetEntitlements API error:', error);
-      // Entitlements may not be available for SaaS Subscriptions (usage-based) vs Contracts
       return [];
     }
+  }
+
+  /**
+   * Pulls messages from an Amazon SQS queue connected to EventBridge
+   */
+  async receiveSqsMessages(queueUrl: string, maxMessages = 10) {
+    const client = this.getSqsClient();
+    const command = new ReceiveMessageCommand({
+      QueueUrl: queueUrl,
+      MaxNumberOfMessages: Math.min(maxMessages, 10),
+      WaitTimeSeconds: 5,
+    });
+    return client.send(command);
+  }
+
+  /**
+   * Deletes a processed message from the Amazon SQS queue
+   */
+  async deleteSqsMessage(queueUrl: string, receiptHandle: string) {
+    const client = this.getSqsClient();
+    const command = new DeleteMessageCommand({
+      QueueUrl: queueUrl,
+      ReceiptHandle: receiptHandle,
+    });
+    return client.send(command);
   }
 }
 

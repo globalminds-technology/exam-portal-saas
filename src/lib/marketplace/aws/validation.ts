@@ -7,13 +7,15 @@ export const AwsLandingTokenSchema = z.object({
 });
 
 export const AwsActivateSchema = z.object({
-  customerIdentifier: z
-    .string({ required_error: 'AWS Customer Identifier is required' })
-    .min(1, 'Customer Identifier cannot be empty'),
+  customerAccountId: z
+    .string({ required_error: 'AWS Customer Account ID is required' })
+    .min(1, 'Customer Account ID cannot be empty'),
   productCode: z
     .string({ required_error: 'AWS Product Code is required' })
     .min(1, 'Product Code cannot be empty'),
-  customerAccountId: z.string().optional(),
+  licenseArn: z.string().optional(),
+  agreementId: z.string().optional(),
+  customerIdentifier: z.string().optional(), // Legacy support
   dimension: z.string().optional(),
   quantity: z.number().int().positive().optional().default(1),
   newAdmin: z
@@ -25,21 +27,29 @@ export const AwsActivateSchema = z.object({
     .optional(),
 });
 
-export const AwsSnsEnvelopeSchema = z.object({
-  Type: z.enum(['SubscriptionConfirmation', 'Notification', 'UnsubscribeConfirmation']),
-  MessageId: z.string().min(1),
-  Token: z.string().optional(),
-  TopicArn: z.string().min(1),
-  Subject: z.string().optional(),
-  Message: z.string().min(1),
-  Timestamp: z.string().min(1),
-  SignatureVersion: z.string().min(1),
-  Signature: z.string().min(1),
-  SigningCertURL: z.string().url(),
-  SubscribeURL: z.string().url().optional(),
-  UnsubscribeURL: z.string().url().optional(),
+export const AwsEventBridgeEnvelopeSchema = z.object({
+  version: z.string().optional().default('0'),
+  id: z.string().min(1, 'EventBridge message id is required'),
+  'detail-type': z.string().min(1, 'detail-type is required'),
+  source: z.string().min(1, 'source is required'),
+  account: z.string().optional().default(''),
+  time: z.string().optional().default(''),
+  region: z.string().optional().default(''),
+  resources: z.array(z.string()).optional().default([]),
+  detail: z
+    .object({
+      requestId: z.string().optional(),
+      catalog: z.string().optional(),
+      agreementId: z.string().optional(),
+      licenseArn: z.string().optional(),
+      productCode: z.string().optional(),
+      customerAwsAccountId: z.string().optional(),
+      agreementStatus: z.string().optional(),
+      advisoryType: z.string().optional(),
+    })
+    .passthrough(),
 });
 
 export type AwsLandingTokenInput = z.infer<typeof AwsLandingTokenSchema>;
 export type AwsActivateInput = z.infer<typeof AwsActivateSchema>;
-export type AwsSnsEnvelopeInput = z.infer<typeof AwsSnsEnvelopeSchema>;
+export type AwsEventBridgeEnvelopeInput = z.infer<typeof AwsEventBridgeEnvelopeSchema>;

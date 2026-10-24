@@ -20,8 +20,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { customerIdentifier, productCode, customerAccountId, dimension, quantity, newAdmin } =
-      parseResult.data;
+    const {
+      customerAccountId,
+      productCode,
+      licenseArn,
+      agreementId,
+      customerIdentifier,
+      dimension,
+      quantity,
+      newAdmin,
+    } = parseResult.data;
 
     // 1. Authenticate user or provision new organization admin
     let currentSession = await getSessionFromRequest(request);
@@ -78,9 +86,11 @@ export async function POST(request: NextRequest) {
 
     // 2. Link and activate subscription in database
     const subscription = await linkAndActivateAwsSubscription({
-      customerIdentifier,
       customerAccountId,
       productCode,
+      licenseArn,
+      agreementId,
+      customerIdentifier,
       dimension,
       quantity,
       userId: targetUserId,
@@ -88,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'AWS Marketplace subscription successfully activated and linked.',
+      message: 'AWS Marketplace subscription successfully linked.',
       subscription,
     });
   } catch (error: unknown) {

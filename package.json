@@ -15,6 +15,9 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-marketplace-entitlement-service": "^3.758.0",
+    "@aws-sdk/client-marketplace-metering": "^3.758.0",
+    "@aws-sdk/client-sqs": "^3.1156.0",
     "@prisma/client": "^6.4.1",
     "bcryptjs": "^3.0.2",
     "canvas-confetti": "^1.9.4",
@@ -27,12 +30,10 @@
     "pdf-parse": "^1.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "sns-validator": "^0.3.5",
     "tailwind-merge": "^3.0.2",
     "xlsx": "^0.18.5",
-    "zod": "^3.24.2",
-    "@aws-sdk/client-marketplace-metering": "^3.758.0",
-    "@aws-sdk/client-marketplace-entitlement-service": "^3.758.0",
-    "sns-validator": "^0.3.5"
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

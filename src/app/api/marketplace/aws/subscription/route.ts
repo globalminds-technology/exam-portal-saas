@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth/session';
 import {
   getUserAwsSubscriptions,
+  getAwsSubscriptionByLicenseArn,
+  getAwsSubscriptionByAccountId,
   getAwsSubscriptionByCustomerIdentifier,
 } from '@/lib/marketplace/aws/subscriptions';
 
@@ -13,10 +15,20 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const licenseArn = searchParams.get('licenseArn');
+    const customerAccountId = searchParams.get('customerAccountId');
     const customerIdentifier = searchParams.get('customerIdentifier');
 
-    if (customerIdentifier) {
-      const subscription = await getAwsSubscriptionByCustomerIdentifier(customerIdentifier);
+    let subscription = null;
+    if (licenseArn) {
+      subscription = await getAwsSubscriptionByLicenseArn(licenseArn);
+    } else if (customerAccountId) {
+      subscription = await getAwsSubscriptionByAccountId(customerAccountId);
+    } else if (customerIdentifier) {
+      subscription = await getAwsSubscriptionByCustomerIdentifier(customerIdentifier);
+    }
+
+    if (licenseArn || customerAccountId || customerIdentifier) {
       if (!subscription) {
         return NextResponse.json({ error: 'AWS Subscription not found' }, { status: 404 });
       }

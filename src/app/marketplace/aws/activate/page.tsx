@@ -15,13 +15,14 @@ import {
   Mail,
   User as UserIcon,
   Cloud,
-  Layers,
+  Clock,
 } from 'lucide-react';
 
 interface ResolvedAwsCustomer {
-  customerIdentifier: string;
+  customerAccountId: string;
   productCode: string;
-  customerAccountId?: string;
+  licenseArn?: string;
+  customerIdentifier?: string;
   dimension: string;
   quantity: number;
   expirationDate?: string;
@@ -47,8 +48,8 @@ function AwsMarketplaceActivationContent() {
   const [customer, setCustomer] = useState<ResolvedAwsCustomer | null>(null);
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
 
-  // Authentication mode for non-logged-in users: 'login' | 'register'
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
+  // Authentication mode for non-logged-in users: 'register' | 'login'
+  const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
@@ -61,6 +62,7 @@ function AwsMarketplaceActivationContent() {
 
   const [activating, setActivating] = useState(false);
   const [activationSuccess, setActivationSuccess] = useState(false);
+  const [resultingStatus, setResultingStatus] = useState<string>('SUBSCRIBED');
 
   // 1. Check current login session
   useEffect(() => {
@@ -140,14 +142,15 @@ function AwsMarketplaceActivationContent() {
         throw new Error(loginData.error || 'Invalid credentials');
       }
 
-      // Activate subscription
+      // Link subscription
       const actRes = await fetch('/api/marketplace/aws/activate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerIdentifier: customer.customerIdentifier,
-          productCode: customer.productCode,
           customerAccountId: customer.customerAccountId,
+          productCode: customer.productCode,
+          licenseArn: customer.licenseArn,
+          customerIdentifier: customer.customerIdentifier,
           dimension: customer.dimension,
           quantity: customer.quantity,
         }),
@@ -158,6 +161,7 @@ function AwsMarketplaceActivationContent() {
         throw new Error(actData.error || 'Failed to link AWS subscription');
       }
 
+      setResultingStatus(actData.subscription?.status || 'SUBSCRIBED');
       setActivationSuccess(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Activation error';
@@ -180,9 +184,10 @@ function AwsMarketplaceActivationContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerIdentifier: customer.customerIdentifier,
-          productCode: customer.productCode,
           customerAccountId: customer.customerAccountId,
+          productCode: customer.productCode,
+          licenseArn: customer.licenseArn,
+          customerIdentifier: customer.customerIdentifier,
           dimension: customer.dimension,
           quantity: customer.quantity,
           newAdmin: {
@@ -198,6 +203,7 @@ function AwsMarketplaceActivationContent() {
         throw new Error(actData.error || 'Failed to activate AWS subscription');
       }
 
+      setResultingStatus(actData.subscription?.status || 'SUBSCRIBED');
       setActivationSuccess(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Registration error';
@@ -219,9 +225,10 @@ function AwsMarketplaceActivationContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerIdentifier: customer.customerIdentifier,
-          productCode: customer.productCode,
           customerAccountId: customer.customerAccountId,
+          productCode: customer.productCode,
+          licenseArn: customer.licenseArn,
+          customerIdentifier: customer.customerIdentifier,
           dimension: customer.dimension,
           quantity: customer.quantity,
         }),
@@ -232,6 +239,7 @@ function AwsMarketplaceActivationContent() {
         throw new Error(actData.error || 'Failed to link subscription');
       }
 
+      setResultingStatus(actData.subscription?.status || 'SUBSCRIBED');
       setActivationSuccess(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Linking error';
@@ -243,30 +251,48 @@ function AwsMarketplaceActivationContent() {
 
   // Success view
   if (activationSuccess) {
+    const isPending = resultingStatus === 'PENDING_EVENT';
+
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
           <div className="bg-white py-8 px-4 shadow-xl rounded-2xl sm:px-10 border border-slate-200 text-center">
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600">
-              <CheckCircle2 className="w-10 h-10" />
+            <div
+              className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                isPending ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+              }`}
+            >
+              {isPending ? <Clock className="w-10 h-10" /> : <CheckCircle2 className="w-10 h-10" />}
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">Subscription Activated!</h2>
+
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">
+              {isPending ? 'Onboarding Registered!' : 'Subscription Activated!'}
+            </h2>
             <p className="text-slate-600 mb-6 text-sm">
-              Your AWS Marketplace subscription has been linked to your Global Minds Examination
-              System administrator account.
+              {isPending
+                ? 'Your organization administrator account has been created. Full access will unlock as soon as AWS EventBridge confirms your license provision.'
+                : 'Your AWS Marketplace subscription has been linked to your Global Minds Examination System administrator account.'}
             </p>
 
-            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 text-left mb-6 text-xs space-y-1">
+            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 text-left mb-6 text-xs space-y-1.5">
               <p>
-                <span className="font-semibold text-slate-700">AWS Customer ID:</span>{' '}
-                <span className="font-mono">{customer?.customerIdentifier}</span>
+                <span className="font-semibold text-slate-700">AWS Account ID:</span>{' '}
+                <span className="font-mono">{customer?.customerAccountId}</span>
               </p>
+              {customer?.licenseArn && (
+                <p>
+                  <span className="font-semibold text-slate-700">License ARN:</span>{' '}
+                  <span className="font-mono truncate block text-[11px] text-slate-600">
+                    {customer.licenseArn}
+                  </span>
+                </p>
+              )}
               <p>
                 <span className="font-semibold text-slate-700">Product Code:</span>{' '}
                 <span className="font-mono">{customer?.productCode}</span>
               </p>
               <p>
-                <span className="font-semibold text-slate-700">Tier / Dimension:</span>{' '}
+                <span className="font-semibold text-slate-700">Plan / Dimension:</span>{' '}
                 <span className="capitalize">{customer?.dimension}</span>
               </p>
               <p>
@@ -294,13 +320,13 @@ function AwsMarketplaceActivationContent() {
         <div className="text-center mb-6">
           <div className="inline-flex items-center space-x-2 bg-amber-500/10 text-amber-700 px-3 py-1.5 rounded-full text-xs font-semibold mb-3 border border-amber-500/20">
             <Cloud className="w-4 h-4 text-amber-600" />
-            <span>AWS Marketplace SaaS Fulfillment</span>
+            <span>AWS Marketplace EventBridge Integration</span>
           </div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
             Activate Examination System SaaS
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Link your AWS Marketplace purchase to your Global Minds Examination Portal account.
+            Link your AWS Marketplace agreement to your Global Minds Examination Portal account.
           </p>
         </div>
 
@@ -334,15 +360,15 @@ function AwsMarketplaceActivationContent() {
                     AWS Purchase Verified
                   </h3>
                   <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    Ready to Activate
+                    Ready to Link
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-xs pt-2 border-t border-amber-200/60">
                   <div>
-                    <span className="text-slate-500">Customer Identifier:</span>
+                    <span className="text-slate-500">AWS Account ID:</span>
                     <p className="font-mono font-medium text-slate-900 truncate">
-                      {customer.customerIdentifier}
+                      {customer.customerAccountId}
                     </p>
                   </div>
                   <div>
@@ -360,6 +386,15 @@ function AwsMarketplaceActivationContent() {
                     <p className="font-medium text-slate-900">{customer.quantity} Seats</p>
                   </div>
                 </div>
+
+                {customer.licenseArn && (
+                  <div className="mt-2.5 pt-2 border-t border-amber-200/40 text-xs">
+                    <span className="text-slate-500">License ARN:</span>
+                    <p className="font-mono text-[11px] text-slate-700 truncate">
+                      {customer.licenseArn}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Already Claimed Notice */}
@@ -405,7 +440,7 @@ function AwsMarketplaceActivationContent() {
                         {activating ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Activating with AWS...
+                            Linking with AWS Account...
                           </>
                         ) : (
                           <>
@@ -506,11 +541,11 @@ function AwsMarketplaceActivationContent() {
                             {activating ? (
                               <>
                                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                Provisioning & Activating...
+                                Provisioning Administrator...
                               </>
                             ) : (
                               <>
-                                Create Admin Account & Activate
+                                Create Admin Account & Link
                                 <ArrowRight className="w-4 h-4 ml-2" />
                               </>
                             )}

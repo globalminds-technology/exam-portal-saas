@@ -4,12 +4,50 @@
 
 import { db } from '@/lib/db';
 import { AwsSubscriptionStatus, Prisma } from '@prisma/client';
-import { awsMarketplaceClient } from './client';
-import type { AwsSnsNotificationPayload } from './types';
 
-export async function getAwsSubscriptionByCustomerIdentifier(customerIdentifier: string) {
+export async function getAwsSubscriptionByLicenseArn(licenseArn: string) {
   return db.awsMarketplaceSubscription.findUnique({
-    where: { customerIdentifier },
+    where: { licenseArn },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+  });
+}
+
+export async function getAwsSubscriptionByAccountId(customerAccountId: string) {
+  return db.awsMarketplaceSubscription.findFirst({
+    where: { customerAccountId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+  });
+}
+
+// Backward-compatible query
+export async function getAwsSubscriptionByCustomerIdentifier(customerIdentifier: string) {
+  return db.awsMarketplaceSubscription.findFirst({
+    where: {
+      OR: [
+        { customerIdentifier },
+        { customerAccountId: customerIdentifier },
+        { licenseArn: customerIdentifier },
+      ],
+    },
     include: {
       user: {
         select: {
@@ -31,178 +69,129 @@ export async function getUserAwsSubscriptions(userId: string) {
 }
 
 export interface LinkAndActivateAwsParams {
-  customerIdentifier: string;
-  customerAccountId?: string;
+  customerAccountId: string;
   productCode: string;
+  licenseArn?: string;
+  agreementId?: string;
+  customerIdentifier?: string;
   dimension?: string;
   quantity?: number;
   expirationDate?: Date;
   userId: string;
 }
 
+/**
+ * Links a customer AWS subscription to an organization administrator account.
+ * Guardrail: Access is marked PENDING_EVENT until verified by License Updated event,
+ * or marked SUBSCRIBED if a valid License Updated event was already received.
+ */
 export async function linkAndActivateAwsSubscription(params: LinkAndActivateAwsParams) {
   return db.$transaction(async (tx: Prisma.TransactionClient) => {
-    // 1. Check if subscription is already linked to another administrator
-    const existing = await tx.awsMarketplaceSubscription.findUnique({
-      where: { customerIdentifier: params.customerIdentifier },
-    });
+    // 1. Check if subscription already exists by licenseArn or customerAccountId
+    let existing = null;
+    if (params.licenseArn) {
+      existing = await tx.awsMarketplaceSubscription.findUnique({
+        where: { licenseArn: params.licenseArn },
+      });
+    }
 
+    if (!existing && params.customerIdentifier) {
+      existing = await tx.awsMarketplaceSubscription.findUnique({
+        where: { customerIdentifier: params.customerIdentifier },
+      });
+    }
+
+    if (!existing) {
+      existing = await tx.awsMarketplaceSubscription.findFirst({
+        where: {
+          customerAccountId: params.customerAccountId,
+          productCode: params.productCode,
+        },
+      });
+    }
+
+    // Guard against claiming someone else's subscription
     if (existing && existing.userId !== params.userId) {
       throw new Error(
         'This AWS Marketplace subscription is already claimed by another administrator account.'
       );
     }
 
-    // 2. Upsert the AWS subscription record with SUBSCRIBED status
-    const subscription = await tx.awsMarketplaceSubscription.upsert({
-      where: { customerIdentifier: params.customerIdentifier },
-      create: {
-        customerIdentifier: params.customerIdentifier,
-        customerAccountId: params.customerAccountId,
-        productCode: params.productCode,
-        dimension: params.dimension,
-        quantity: params.quantity || 1,
-        status: AwsSubscriptionStatus.SUBSCRIBED,
-        expirationDate: params.expirationDate,
-        userId: params.userId,
-        activatedAt: new Date(),
-      },
-      update: {
-        customerAccountId: params.customerAccountId,
-        productCode: params.productCode,
-        dimension: params.dimension,
-        quantity: params.quantity || 1,
-        status: AwsSubscriptionStatus.SUBSCRIBED,
-        expirationDate: params.expirationDate,
-        userId: params.userId,
-        activatedAt: existing?.activatedAt || new Date(),
+    // 2. Check if a License Updated event has already arrived for this customer/license
+    const priorLicenseEvent = await tx.awsMarketplaceEvent.findFirst({
+      where: {
+        OR: [
+          ...(params.licenseArn ? [{ licenseArn: params.licenseArn }] : []),
+          { customerAccountId: params.customerAccountId },
+        ],
+        detailType: 'License Updated - Manufacturer',
+        processed: true,
       },
     });
+
+    // Determine initial status:
+    // If License event arrived -> SUBSCRIBED
+    // If not yet arrived -> PENDING_EVENT (access unlocked once event is received)
+    const initialStatus: AwsSubscriptionStatus = priorLicenseEvent
+      ? AwsSubscriptionStatus.SUBSCRIBED
+      : AwsSubscriptionStatus.PENDING_EVENT;
+
+    // 3. Upsert the AWS subscription record
+    let subscription;
+    if (existing) {
+      subscription = await tx.awsMarketplaceSubscription.update({
+        where: { id: existing.id },
+        data: {
+          licenseArn: params.licenseArn || existing.licenseArn,
+          agreementId: params.agreementId || existing.agreementId,
+          customerAccountId: params.customerAccountId || existing.customerAccountId,
+          customerIdentifier: params.customerIdentifier || existing.customerIdentifier,
+          productCode: params.productCode,
+          dimension: params.dimension || existing.dimension,
+          quantity: params.quantity || existing.quantity,
+          status:
+            existing.status === AwsSubscriptionStatus.SUBSCRIBED
+              ? AwsSubscriptionStatus.SUBSCRIBED
+              : initialStatus,
+          expirationDate: params.expirationDate || existing.expirationDate,
+          userId: params.userId,
+          activatedAt:
+            initialStatus === AwsSubscriptionStatus.SUBSCRIBED
+              ? existing.activatedAt || new Date()
+              : existing.activatedAt,
+        },
+      });
+    } else {
+      subscription = await tx.awsMarketplaceSubscription.create({
+        data: {
+          licenseArn: params.licenseArn,
+          agreementId: params.agreementId,
+          customerAccountId: params.customerAccountId,
+          customerIdentifier: params.customerIdentifier,
+          productCode: params.productCode,
+          dimension: params.dimension,
+          quantity: params.quantity || 1,
+          status: initialStatus,
+          expirationDate: params.expirationDate,
+          userId: params.userId,
+          activatedAt: initialStatus === AwsSubscriptionStatus.SUBSCRIBED ? new Date() : null,
+        },
+      });
+    }
+
+    // Link any orphaned events for this license to this subscription
+    if (params.licenseArn) {
+      await tx.awsMarketplaceEvent.updateMany({
+        where: {
+          licenseArn: params.licenseArn,
+          subscriptionId: null,
+        },
+        data: {
+          subscriptionId: subscription.id,
+        },
+      });
+    }
 
     return subscription;
   });
-}
-
-/**
- * Processes incoming Amazon SNS subscription lifecycle notifications idempotently.
- * Supported actions: subscribe-success, subscribe-fail, unsubscribe-pending, unsubscribe-success, entitlement-updated
- */
-export async function processAwsSnsNotification(
-  payload: AwsSnsNotificationPayload,
-  messageId: string
-) {
-  const customerIdentifier = payload['customer-identifier'];
-  const action = payload.action;
-
-  // 1. Idempotency Check: see if this operation has already been recorded
-  const existingEvent = await db.awsMarketplaceEvent.findUnique({
-    where: { id: messageId },
-  });
-
-  if (existingEvent && existingEvent.processed) {
-    return {
-      status: 'ignored',
-      message: `SNS message ${messageId} was already processed successfully.`,
-    };
-  }
-
-  // 2. Upsert event record in InProgress state
-  await db.awsMarketplaceEvent.upsert({
-    where: { id: messageId },
-    create: {
-      id: messageId,
-      customerIdentifier,
-      action,
-      status: 'InProgress',
-      rawPayload: JSON.stringify(payload),
-      processed: false,
-    },
-    update: {
-      action,
-      status: 'InProgress',
-      rawPayload: JSON.stringify(payload),
-    },
-  });
-
-  // 3. Determine target subscription status
-  let newStatus: AwsSubscriptionStatus | undefined;
-  switch (action) {
-    case 'subscribe-success':
-      newStatus = AwsSubscriptionStatus.SUBSCRIBED;
-      break;
-    case 'subscribe-fail':
-      newStatus = AwsSubscriptionStatus.UNSUBSCRIBED;
-      break;
-    case 'unsubscribe-pending':
-      newStatus = AwsSubscriptionStatus.SUSPENDED;
-      break;
-    case 'unsubscribe-success':
-      newStatus = AwsSubscriptionStatus.UNSUBSCRIBED;
-      break;
-    case 'entitlement-updated':
-      newStatus = AwsSubscriptionStatus.SUBSCRIBED;
-      break;
-    default:
-      console.warn(`Unhandled AWS Marketplace action: ${action}`);
-  }
-
-  // 4. Update the subscription record if it exists
-  const subscription = await db.awsMarketplaceSubscription.findUnique({
-    where: { customerIdentifier },
-  });
-
-  if (subscription) {
-    let dimension = subscription.dimension;
-    let quantity = subscription.quantity;
-    let expirationDate = subscription.expirationDate;
-
-    // Fetch fresh entitlements if action is entitlement-updated
-    if (action === 'entitlement-updated') {
-      try {
-        const entitlements = await awsMarketplaceClient.getEntitlements(
-          customerIdentifier,
-          payload['product-code']
-        );
-        if (entitlements.length > 0) {
-          const first = entitlements[0];
-          dimension = first.dimension;
-          quantity = first.value?.IntegerValue ?? quantity;
-          expirationDate = first.expirationDate || expirationDate;
-        }
-      } catch (err) {
-        console.warn('Failed to query updated entitlements:', err);
-      }
-    }
-
-    await db.awsMarketplaceSubscription.update({
-      where: { customerIdentifier },
-      data: {
-        status: newStatus || subscription.status,
-        dimension,
-        quantity,
-        expirationDate,
-      },
-    });
-  } else {
-    console.warn(
-      `Received SNS event for unregistered AWS CustomerIdentifier: ${customerIdentifier}`
-    );
-  }
-
-  // 5. Mark the event as processed
-  await db.awsMarketplaceEvent.update({
-    where: { id: messageId },
-    data: {
-      status: 'Completed',
-      processed: true,
-      processedAt: new Date(),
-    },
-  });
-
-  return {
-    status: 'success',
-    action,
-    customerIdentifier,
-    updatedStatus: newStatus,
-  };
 }
