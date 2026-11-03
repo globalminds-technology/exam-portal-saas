@@ -9,7 +9,8 @@
     "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
     "test:marketplace": "tsx test/verify-marketplace.ts",
-    "test:marketplace:aws": "tsx test/verify-aws-marketplace.ts"
+    "test:marketplace:aws": "tsx test/verify-aws-marketplace.ts",
+    "verify:aws:entitlements": "tsx scripts/verify-aws-entitlements-live.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

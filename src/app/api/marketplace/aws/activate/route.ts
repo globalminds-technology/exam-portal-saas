@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AwsActivateSchema } from '@/lib/marketplace/aws/validation';
 import { linkAndActivateAwsSubscription } from '@/lib/marketplace/aws/subscriptions';
+import { awsMarketplaceClient } from '@/lib/marketplace/aws/client';
 import { getSessionFromRequest, setSessionCookie } from '@/lib/auth/session';
 import { hashPassword } from '@/lib/auth/password';
 import { db } from '@/lib/db';
@@ -84,15 +85,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Link and activate subscription in database
+    // 2. Authoritatively verify entitlements on server-side (do not trust unverified client values)
+    let verifiedDimension = dimension || 'standard';
+    let verifiedQuantity = quantity || 1;
+    let verifiedExpirationDate: Date | undefined;
+    let hasVerifiedEntitlement = false;
+
+    try {
+      const entitlements = await awsMarketplaceClient.getEntitlements({
+        licenseArn,
+        customerAccountId,
+        customerIdentifier,
+        productCode,
+      });
+
+      if (entitlements.length > 0) {
+        const primary = entitlements[0];
+        verifiedDimension = primary.dimension || verifiedDimension;
+        verifiedQuantity = primary.value?.IntegerValue ?? verifiedQuantity;
+        verifiedExpirationDate = primary.expirationDate;
+        hasVerifiedEntitlement = true;
+      }
+    } catch (entitlementError) {
+      console.warn('Server-side AWS Entitlement check during activation warning:', entitlementError);
+    }
+
+    // 3. Link and activate subscription in database
     const subscription = await linkAndActivateAwsSubscription({
       customerAccountId,
       productCode,
       licenseArn,
       agreementId,
       customerIdentifier,
-      dimension,
-      quantity,
+      dimension: verifiedDimension,
+      quantity: verifiedQuantity,
+      expirationDate: verifiedExpirationDate,
+      hasVerifiedEntitlement,
       userId: targetUserId,
     });
 
