@@ -77,6 +77,7 @@ export interface LinkAndActivateAwsParams {
   dimension?: string;
   quantity?: number;
   expirationDate?: Date;
+  hasVerifiedEntitlement?: boolean;
   userId: string;
 }
 
@@ -130,11 +131,12 @@ export async function linkAndActivateAwsSubscription(params: LinkAndActivateAwsP
     });
 
     // Determine initial status:
-    // If License event arrived -> SUBSCRIBED
-    // If not yet arrived -> PENDING_EVENT (access unlocked once event is received)
-    const initialStatus: AwsSubscriptionStatus = priorLicenseEvent
-      ? AwsSubscriptionStatus.SUBSCRIBED
-      : AwsSubscriptionStatus.PENDING_EVENT;
+    // If License event arrived OR verified authoritative entitlement -> SUBSCRIBED
+    // If not yet verified -> PENDING_EVENT (access unlocked once event is received)
+    const initialStatus: AwsSubscriptionStatus =
+      priorLicenseEvent || params.hasVerifiedEntitlement
+        ? AwsSubscriptionStatus.SUBSCRIBED
+        : AwsSubscriptionStatus.PENDING_EVENT;
 
     // 3. Upsert the AWS subscription record
     let subscription;

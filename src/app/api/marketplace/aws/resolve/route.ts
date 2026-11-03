@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AwsLandingTokenSchema } from '@/lib/marketplace/aws/validation';
 import { awsMarketplaceClient } from '@/lib/marketplace/aws/client';
+import type { AwsEntitlementItem } from '@/lib/marketplace/aws/types';
 import {
   getAwsSubscriptionByLicenseArn,
   getAwsSubscriptionByAccountId,
@@ -41,12 +42,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Query active entitlements using LicenseArn (recommended) or customerIdentifier
-    const entitlements = await awsMarketplaceClient.getEntitlements({
-      licenseArn: resolvedData.licenseArn,
-      customerIdentifier: resolvedData.customerIdentifier,
-      productCode: resolvedData.productCode,
-    });
+    // 3. Query active entitlements using LicenseArn, CustomerAccountId, or customerIdentifier
+    let entitlements: AwsEntitlementItem[] = [];
+    try {
+      entitlements = await awsMarketplaceClient.getEntitlements({
+        licenseArn: resolvedData.licenseArn,
+        customerAccountId: resolvedData.customerAccountId,
+        customerIdentifier: resolvedData.customerIdentifier,
+        productCode: resolvedData.productCode,
+      });
+    } catch (entitlementErr) {
+      console.warn('Entitlement lookup warning during resolve:', entitlementErr);
+    }
 
     let dimension = 'standard';
     let quantity = 1;

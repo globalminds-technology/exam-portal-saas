@@ -159,10 +159,11 @@ export async function processEventBridgeEvent(
       newStatus = AwsSubscriptionStatus.SUBSCRIBED;
 
       // Reconcile with authoritative AWS GetEntitlements API
-      if (licenseArn) {
+      if (licenseArn || customerAccountId) {
         try {
           const entitlements = await awsMarketplaceClient.getEntitlements({
             licenseArn,
+            customerAccountId,
             productCode,
           });
 

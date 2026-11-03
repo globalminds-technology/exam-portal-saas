@@ -9,6 +9,7 @@ import {
   AwsEventBridgeEnvelopeSchema,
 } from '../src/lib/marketplace/aws/validation';
 import { validateEventBridgeSecret } from '../src/lib/marketplace/aws/eventbridge';
+import { buildEntitlementFilter } from '../src/lib/marketplace/aws/client';
 import {
   ResolveTokenSchema as AzureResolveTokenSchema,
   ActivateSubscriptionSchema as AzureActivateSchema,
@@ -206,6 +207,53 @@ async function runTests() {
       status: 'InProgress',
     });
     assert(azureWebhook.success, 'Azure MarketplaceWebhookSchema remains functional');
+  }
+
+  // TEST SUITE 6: AWS Entitlement Filter & Resolution Logic
+  console.log('\n--- Test Suite 6: AWS Entitlement Filter Builder (Post-July 2026 & Legacy) ---');
+  {
+    // 6.1 LICENSE_ARN primary filter
+    const licenseFilter = buildEntitlementFilter({
+      licenseArn: 'arn:aws:marketplace::906470608117:license:lic-test-123',
+      customerAccountId: '906470608117',
+    });
+    assert(
+      licenseFilter !== undefined &&
+        licenseFilter.LICENSE_ARN?.[0] === 'arn:aws:marketplace::906470608117:license:lic-test-123',
+      'LICENSE_ARN takes precedence when licenseArn is present'
+    );
+    assert(
+      licenseFilter?.CUSTOMER_AWS_ACCOUNT_ID === undefined,
+      'CUSTOMER_AWS_ACCOUNT_ID is omitted when LICENSE_ARN is specified'
+    );
+
+    // 6.2 CUSTOMER_AWS_ACCOUNT_ID modern filter (when licenseArn not available)
+    const accountFilter = buildEntitlementFilter({
+      customerAccountId: '906470608117',
+    });
+    assert(
+      accountFilter !== undefined &&
+        accountFilter.CUSTOMER_AWS_ACCOUNT_ID?.[0] === '906470608117',
+      'CUSTOMER_AWS_ACCOUNT_ID filter built correctly for modern accounts'
+    );
+    assert(
+      accountFilter?.CUSTOMER_IDENTIFIER === undefined,
+      'CUSTOMER_IDENTIFIER is not included with CUSTOMER_AWS_ACCOUNT_ID (mutually exclusive)'
+    );
+
+    // 6.3 Legacy CUSTOMER_IDENTIFIER filter
+    const legacyFilter = buildEntitlementFilter({
+      customerIdentifier: 'cust-legacy-identifier-xyz',
+    });
+    assert(
+      legacyFilter !== undefined &&
+        legacyFilter.CUSTOMER_IDENTIFIER?.[0] === 'cust-legacy-identifier-xyz',
+      'CUSTOMER_IDENTIFIER filter built correctly for legacy accounts'
+    );
+
+    // 6.4 Empty options
+    const emptyFilter = buildEntitlementFilter({});
+    assert(emptyFilter === undefined, 'Empty filter options return undefined (queries all entitlements for product)');
   }
 
   console.log('\n======================================================');

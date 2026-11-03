@@ -19,6 +19,13 @@ export interface AwsEntitlementItem {
   expirationDate?: Date;
 }
 
+export interface GetEntitlementOptions {
+  licenseArn?: string;
+  customerAccountId?: string;
+  customerIdentifier?: string;
+  productCode?: string;
+}
+
 export type AwsEventBridgeDetailType =
   | 'License Updated - Manufacturer'
   | 'License Deprovisioned - Manufacturer'

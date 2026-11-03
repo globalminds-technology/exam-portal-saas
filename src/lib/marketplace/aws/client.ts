@@ -11,13 +11,32 @@ import {
 import {
   MarketplaceEntitlementServiceClient,
   GetEntitlementsCommand,
+  type GetEntitlementsCommandOutput,
 } from '@aws-sdk/client-marketplace-entitlement-service';
 import {
   SQSClient,
   ReceiveMessageCommand,
   DeleteMessageCommand,
 } from '@aws-sdk/client-sqs';
-import type { AwsResolveCustomerResponse, AwsEntitlementItem } from './types';
+import type { AwsResolveCustomerResponse, AwsEntitlementItem, GetEntitlementOptions } from './types';
+export type { GetEntitlementOptions };
+
+export function buildEntitlementFilter(options: GetEntitlementOptions): Record<string, string[]> | undefined {
+  const filter: Record<string, string[]> = {};
+
+  if (options.licenseArn) {
+    // Primary modern filter by License ARN
+    filter.LICENSE_ARN = [options.licenseArn];
+  } else if (options.customerAccountId) {
+    // Modern filter by Customer AWS Account ID (mutually exclusive with CUSTOMER_IDENTIFIER)
+    filter.CUSTOMER_AWS_ACCOUNT_ID = [options.customerAccountId];
+  } else if (options.customerIdentifier) {
+    // Legacy filter by Customer Identifier (mutually exclusive with CUSTOMER_AWS_ACCOUNT_ID)
+    filter.CUSTOMER_IDENTIFIER = [options.customerIdentifier];
+  }
+
+  return Object.keys(filter).length > 0 ? filter : undefined;
+}
 
 function getAwsCredentials() {
   const accessKeyId = process.env.AWS_MARKETPLACE_ACCESS_KEY_ID;
@@ -25,27 +44,16 @@ function getAwsCredentials() {
   const region = process.env.AWS_MARKETPLACE_REGION || 'us-east-1';
 
   if (!accessKeyId || !secretAccessKey) {
-    console.warn(
-      'Warning: AWS_MARKETPLACE_ACCESS_KEY_ID or AWS_MARKETPLACE_SECRET_ACCESS_KEY not configured.'
-    );
+    throw new Error('AWS Marketplace credentials are not configured in environment variables');
   }
 
   return {
     region,
-    credentials:
-      accessKeyId && secretAccessKey
-        ? {
-            accessKeyId,
-            secretAccessKey,
-          }
-        : undefined,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
   };
-}
-
-export interface GetEntitlementOptions {
-  licenseArn?: string;
-  customerIdentifier?: string;
-  productCode?: string;
 }
 
 class AwsMarketplaceClient {
@@ -115,46 +123,48 @@ class AwsMarketplaceClient {
   }
 
   /**
-   * Retrieves active entitlements for the customer using LicenseArn (recommended) or CustomerIdentifier
+   * Retrieves active entitlements for the customer using LicenseArn (recommended),
+   * CustomerAWSAccountId, or CustomerIdentifier, with pagination support.
    */
-  async getEntitlements(options: GetEntitlementOptions): Promise<AwsEntitlementItem[]> {
+  async getEntitlements(options: GetEntitlementOptions = {}): Promise<AwsEntitlementItem[]> {
     const code = options.productCode || process.env.AWS_MARKETPLACE_PRODUCT_CODE;
     if (!code) {
-      console.warn('AWS_MARKETPLACE_PRODUCT_CODE is not configured; skipping entitlement lookup.');
-      return [];
+      throw new Error('AWS_MARKETPLACE_PRODUCT_CODE is not configured; cannot retrieve entitlements.');
     }
 
     try {
       const client = this.getEntitlementClient();
-      const filter: Record<string, string[]> = {};
+      const filter = buildEntitlementFilter(options);
+      const allEntitlements: AwsEntitlementItem[] = [];
+      let nextToken: string | undefined = undefined;
 
-      if (options.licenseArn) {
-        // Query using LicenseArn (post-July 15, 2026 specification)
-        filter.LICENSE_ARN = [options.licenseArn];
-      } else if (options.customerIdentifier) {
-        // Legacy query using CustomerIdentifier
-        filter.CUSTOMER_IDENTIFIER = [options.customerIdentifier];
-      }
+      do {
+        const command = new GetEntitlementsCommand({
+          ProductCode: code,
+          Filter: filter,
+          NextToken: nextToken,
+        });
 
-      const command = new GetEntitlementsCommand({
-        ProductCode: code,
-        Filter: Object.keys(filter).length > 0 ? filter : undefined,
-      });
+        const response: GetEntitlementsCommandOutput = await client.send(command);
 
-      const response = await client.send(command);
+        if (response.Entitlements && response.Entitlements.length > 0) {
+          for (const item of response.Entitlements) {
+            allEntitlements.push({
+              dimension: item.Dimension || 'default',
+              value: item.Value,
+              expirationDate: item.ExpirationDate,
+            });
+          }
+        }
 
-      if (!response.Entitlements || response.Entitlements.length === 0) {
-        return [];
-      }
+        nextToken = response.NextToken;
+      } while (Boolean(nextToken));
 
-      return response.Entitlements.map((item) => ({
-        dimension: item.Dimension || 'default',
-        value: item.Value,
-        expirationDate: item.ExpirationDate,
-      }));
+      return allEntitlements;
     } catch (error: unknown) {
       console.error('AWS GetEntitlements API error:', error);
-      return [];
+      const message = error instanceof Error ? error.message : 'Unknown AWS Entitlements Service error';
+      throw new Error(`AWS GetEntitlements failed: ${message}`);
     }
   }
 
